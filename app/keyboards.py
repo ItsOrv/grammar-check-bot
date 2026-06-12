@@ -30,3 +30,16 @@ def settings_text(level: str, whitelist_count: int, settings: Settings) -> str:
         f"• Model: {settings.llm_model}\n\n"
         "Pick a strictness level:"
     )
+
+
+def add_to_group_keyboard(bot_username: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="➕ Add me to a group",
+            # tg:// deep link — opens the group picker directly in the app;
+            # some clients drop the startgroup param on plain t.me links.
+            url=f"tg://resolve?domain={bot_username}&startgroup=true",
+        )
+    )
+    return builder.as_markup()
