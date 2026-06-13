@@ -14,3 +14,7 @@ class Cooldown:
 
     def mark(self, chat_id: int, user_id: int) -> None:
         self._last[(chat_id, user_id)] = time.monotonic()
+        # Keep the map from growing forever in busy groups.
+        if len(self._last) > 10_000:
+            cutoff = time.monotonic() - self.seconds
+            self._last = {k: v for k, v in self._last.items() if v >= cutoff}
