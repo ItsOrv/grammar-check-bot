@@ -6,7 +6,9 @@ import anthropic
 from app.services.llm.base import (
     RESULT_SCHEMA,
     SYSTEM_PROMPT,
+    TRANSLATE_SYSTEM,
     GrammarResult,
+    build_translate_prompt,
     build_user_prompt,
     parse_result,
 )
@@ -48,3 +50,22 @@ class AnthropicChecker:
             logger.warning("Anthropic returned non-JSON output: %.200s", raw)
             return None
         return parse_result(data)
+
+    async def translate(self, text: str, level: str) -> str | None:
+        try:
+            response = await self.client.messages.create(
+                model=self.model,
+                max_tokens=2048,
+                system=TRANSLATE_SYSTEM,
+                messages=[{"role": "user", "content": build_translate_prompt(text, level)}],
+            )
+        except anthropic.APIError as e:
+            logger.warning("Anthropic API error (translate): %s", e)
+            return None
+
+        if response.stop_reason == "refusal":
+            logger.warning("Anthropic translate request refused")
+            return None
+
+        raw = next((block.text for block in response.content if block.type == "text"), None)
+        return raw.strip() if raw and raw.strip() else None

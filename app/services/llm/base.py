@@ -66,6 +66,31 @@ RESULT_SCHEMA = {
 # Minimum severity (per strictness level) at which the bot replies.
 THRESHOLDS = {"strict": 1, "normal": 2, "casual": 4}
 
+# --- Translation (the /t command) -------------------------------------------
+
+TRANSLATE_SYSTEM = (
+    "You translate text written in any language into natural English. "
+    "Output ONLY the English translation — no quotes, no notes, no explanation, "
+    "no romanization of the original. Keep the meaning faithful and make it sound "
+    "like a real person wrote it."
+)
+
+# Tone of the translation, keyed to the group's strictness level.
+TRANSLATE_TONE = {
+    "strict": (
+        "Tone: formal, polished written English. Full words, correct punctuation and "
+        "capitalization. Example: 'Hello, how are you?'"
+    ),
+    "normal": (
+        "Tone: everyday conversational English — natural but clean. "
+        "Example: 'Hey, how's it going?'"
+    ),
+    "casual": (
+        "Tone: very casual chat/slang English, like texting a close friend. Abbreviations "
+        "and informal spellings are great. Example: 'hey wassup'"
+    ),
+}
+
 
 @dataclass
 class GrammarResult:
@@ -78,6 +103,17 @@ class GrammarResult:
 
 class GrammarChecker(Protocol):
     async def check(self, text: str, level: str, whitelist: list[str]) -> GrammarResult | None: ...
+
+    async def translate(self, text: str, level: str) -> str | None: ...
+
+
+def translation_tone_level(level: str) -> str:
+    """Map a group level to a translation tone. 'off' falls back to normal."""
+    return level if level in TRANSLATE_TONE else "normal"
+
+
+def build_translate_prompt(text: str, level: str) -> str:
+    return f"{TRANSLATE_TONE[translation_tone_level(level)]}\n\nText to translate into English:\n{text}"
 
 
 def build_user_prompt(text: str, level: str, whitelist: list[str]) -> str:

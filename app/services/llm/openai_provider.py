@@ -6,7 +6,9 @@ import openai
 from app.services.llm.base import (
     RESULT_SCHEMA,
     SYSTEM_PROMPT,
+    TRANSLATE_SYSTEM,
     GrammarResult,
+    build_translate_prompt,
     build_user_prompt,
     parse_result,
 )
@@ -55,3 +57,21 @@ class OpenAICompatibleChecker:
             logger.warning("LLM returned non-JSON output: %.200s", raw)
             return None
         return parse_result(data)
+
+    async def translate(self, text: str, level: str) -> str | None:
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                max_tokens=2048,
+                temperature=0.3,
+                messages=[
+                    {"role": "system", "content": TRANSLATE_SYSTEM},
+                    {"role": "user", "content": build_translate_prompt(text, level)},
+                ],
+            )
+        except openai.OpenAIError as e:
+            logger.warning("LLM API error (translate): %s", e)
+            return None
+
+        raw = response.choices[0].message.content if response.choices else None
+        return raw.strip() if raw and raw.strip() else None
