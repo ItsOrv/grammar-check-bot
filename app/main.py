@@ -18,6 +18,7 @@ GROUP_COMMANDS = [
     BotCommand(command="normal", description="Normal: standard grammar, minor stuff ignored"),
     BotCommand(command="casual", description="Casual: slang ok, only meaning-breaking errors"),
     BotCommand(command="off", description="Turn grammar checking off"),
+    BotCommand(command="t", description="Translate text to English (tone matches the level)"),
     BotCommand(command="status", description="Show current settings"),
     BotCommand(command="whitelist", description="Show/add/remove never-flag terms"),
 ]

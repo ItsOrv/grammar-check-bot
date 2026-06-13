@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from aiogram import F, Router
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.config import Settings
 from app.database import repo
 from app.keyboards import settings_keyboard, settings_text
+from app.services.llm import GrammarChecker
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +57,34 @@ async def cmd_set_level(
     async with sessionmaker() as session:
         await repo.set_level(session, message.chat.id, level)
     await message.reply(LEVEL_REPLIES[level])
+
+
+@router.message(Command("t", "translate"))
+async def cmd_translate(
+    message: Message,
+    command: CommandObject,
+    sessionmaker: async_sessionmaker,
+    checker: GrammarChecker,
+    llm_semaphore: asyncio.Semaphore,
+):
+    # Text to translate: command args, or the replied-to message's text.
+    text = (command.args or "").strip()
+    if not text and message.reply_to_message:
+        text = (message.reply_to_message.text or message.reply_to_message.caption or "").strip()
+    if not text:
+        await message.reply("Usage: /t <text>  — or reply to a message with /t")
+        return
+
+    async with sessionmaker() as session:
+        level = await repo.get_level(session, message.chat.id)
+
+    async with llm_semaphore:
+        translation = await checker.translate(text, level)
+
+    if not translation:
+        await message.reply("Couldn't translate right now, please try again.")
+        return
+    await message.reply(f"🌐 {translation}")
 
 
 @router.message(Command("settings", "status"))
