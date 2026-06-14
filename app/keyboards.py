@@ -2,6 +2,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app.config import Settings
+from app.premium import esc, pe
 
 LEVEL_BUTTONS = [
     ("strict", "🎓 Strict"),
@@ -32,7 +33,7 @@ def settings_keyboard(current_level: str, enabled: bool, is_admin: bool = False)
 def settings_text(level: str, whitelist_count: int, settings: Settings, enabled: bool, model: str) -> str:
     state = "🟢 running" if enabled else "🔴 stopped"
     return (
-        "⚙️ Grammar check settings\n"
+        f"{pe('settings', '⚙️')} Grammar check settings\n"
         f"• Status: {state}\n"
         f"• Level: {level}\n"
         f"• Whitelist: {whitelist_count} term(s)\n"
@@ -47,9 +48,9 @@ def settings_text(level: str, whitelist_count: int, settings: Settings, enabled:
 
 def main_menu_text(balance_toman: float) -> str:
     return (
-        "👋 سلام! من یه ربات گرامر انگلیسی‌ام.\n"
+        f"{pe('wave', '👋')} سلام! من یه ربات گرامر انگلیسی‌ام.\n"
         "اینجا جمله بفرست تا چک کنم، یا منو به گروهت اضافه کن.\n\n"
-        f"💰 موجودی: {int(balance_toman):,} تومان\n\n"
+        f"{pe('wallet', '💰')} موجودی: {int(balance_toman):,} تومان\n\n"
         "از منوی زیر انتخاب کن:"
     )
 
@@ -65,7 +66,7 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
 
 
 def model_text(current: str) -> str:
-    return f"🧠 مدل زبانی فعلی: {current}\n\nیکی از مدل‌های زیر رو انتخاب کن:"
+    return f"{pe('model', '🧠')} مدل زبانی فعلی: {esc(current)}\n\nیکی از مدل‌های زیر رو انتخاب کن:"
 
 
 def model_keyboard(current: str, choices: list[tuple[str, str]]) -> InlineKeyboardMarkup:
@@ -80,7 +81,7 @@ def model_keyboard(current: str, choices: list[tuple[str, str]]) -> InlineKeyboa
 
 def usage_text(name: str, requests: int, replies: int, prompt_t: int, completion_t: int, spent_toman: float, balance_toman: float) -> str:
     return (
-        f"📊 مصرف {name}\n\n"
+        f"{pe('usage', '📊')} مصرف {esc(name)}\n\n"
         f"• درخواست‌ها: {requests:,}\n"
         f"• اصلاحیه‌های دریافتی: {replies:,}\n"
         f"• توکن‌ها: {prompt_t:,} ورودی / {completion_t:,} خروجی\n"
@@ -97,7 +98,7 @@ def usage_keyboard() -> InlineKeyboardMarkup:
 
 def stats_text(scope: str, stats: dict) -> str:
     lines = [
-        f"📊 Statistics ({scope})",
+        f"{pe('stats', '📊')} Statistics ({esc(scope)})",
         "",
         f"• Users: {stats['users']}",
         f"• Chats: {stats['chats']}",
@@ -120,7 +121,7 @@ def stats_text(scope: str, stats: dict) -> str:
         lines.append("")
         lines.append("Top spenders:")
         for i, u in enumerate(stats["top"], 1):
-            lines.append(f"{i}. {u['name']} — ${u['cost']:.4f} ({u['requests']} req)")
+            lines.append(f"{i}. {esc(u['name'])} — ${u['cost']:.4f} ({u['requests']} req)")
     return "\n".join(lines)
 
 

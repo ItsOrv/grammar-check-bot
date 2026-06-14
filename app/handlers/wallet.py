@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.config import Settings
 from app.database import repo
+from app.premium import pe
 from app.services.payments.nowpayments import NowPayments
 from app.services.rate import RateProvider, toman_to_usd
 
@@ -79,7 +80,7 @@ async def _wallet_text(sessionmaker: async_sessionmaker, settings: Settings, use
         )
         balance, spent = wallet.balance_toman, wallet.spent_toman
     return (
-        "💰 کیف پول\n\n"
+        f"{pe('wallet', '💰')} کیف پول\n\n"
         f"• موجودی: {_fmt(balance)} تومان\n"
         f"• خرج‌شده تا حالا: {_fmt(spent)} تومان"
     )
@@ -91,7 +92,7 @@ async def _wallet_text(sessionmaker: async_sessionmaker, settings: Settings, use
 @router.message(Command("wallet", "balance"))
 async def cmd_wallet(message: Message, sessionmaker: async_sessionmaker, settings: Settings):
     text = await _wallet_text(sessionmaker, settings, message.from_user)
-    await message.answer(text, reply_markup=_wallet_keyboard())
+    await message.answer(text, reply_markup=_wallet_keyboard(), parse_mode="HTML")
 
 
 @router.callback_query(F.data == "wallet:show")
@@ -113,9 +114,9 @@ async def cb_wallet_show(
         return
     text = await _wallet_text(sessionmaker, settings, callback.from_user)
     try:
-        await callback.message.edit_text(text, reply_markup=_wallet_keyboard())
+        await callback.message.edit_text(text, reply_markup=_wallet_keyboard(), parse_mode="HTML")
     except Exception:
-        await callback.message.answer(text, reply_markup=_wallet_keyboard())
+        await callback.message.answer(text, reply_markup=_wallet_keyboard(), parse_mode="HTML")
     await callback.answer()
 
 

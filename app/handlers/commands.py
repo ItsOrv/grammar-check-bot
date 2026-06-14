@@ -157,6 +157,7 @@ async def cmd_settings(message: Message, sessionmaker: async_sessionmaker, setti
     await message.reply(
         settings_text(level, len(whitelist), settings, enabled, model),
         reply_markup=settings_keyboard(level, enabled, is_admin=show_stats),
+        parse_mode="HTML",
     )
 
 
@@ -174,7 +175,31 @@ async def cmd_stats(message: Message, sessionmaker: async_sessionmaker, settings
     await message.reply(
         stats_text(scope_label, stats),
         reply_markup=stats_keyboard(),
+        parse_mode="HTML",
     )
+
+
+@router.message(Command("emojiid"))
+async def cmd_emojiid(message: Message, settings: Settings):
+    """Admin tool: reply to (or include) premium emoji to get their custom_emoji_id."""
+    if not (message.from_user and message.from_user.id in settings.admin_id_set):
+        return
+    src = message.reply_to_message or message
+    text = src.text or src.caption or ""
+    entities = src.entities or src.caption_entities or []
+    customs = [e for e in entities if e.type == "custom_emoji"]
+    if not customs:
+        await message.reply(
+            "یه پیامی که ایموجی پرمیوم داره ریپلای کن، یا همراه همین دستور ایموجی‌ها رو بفرست."
+        )
+        return
+    # Telegram entity offsets/lengths are in UTF-16 code units.
+    u16 = text.encode("utf-16-le")
+    lines = []
+    for e in customs:
+        char = u16[e.offset * 2 : (e.offset + e.length) * 2].decode("utf-16-le", "ignore")
+        lines.append(f"{char} → <code>{e.custom_emoji_id}</code>")
+    await message.reply("\n".join(lines), parse_mode="HTML")
 
 
 @router.message(Command("whitelist"))

@@ -5,6 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats
 
+from app import premium
 from app.config import Settings
 from app.database.session import create_engine_and_sessionmaker, init_db
 from app.handlers import callbacks, commands, membership, menu, messages, private, wallet
@@ -47,6 +48,8 @@ async def main() -> None:
         level=settings.log_level.upper(),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+    premium.configure(settings.premium_emoji_map)
 
     engine, sessionmaker = create_engine_and_sessionmaker(settings.db_path)
     await init_db(engine)

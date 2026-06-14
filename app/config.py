@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     webhook_host: str = "0.0.0.0"
     webhook_port: int = 8080
 
+    # Premium (custom) emoji shown in message text. Format: "key:custom_emoji_id,..."
+    # Grab the IDs by sending the emoji to the bot with /emojiid (admin only).
+    # Keys used: wave, wallet, usage, model, settings, stats.
+    premium_emoji: str = ""
+
     log_level: str = "INFO"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -60,6 +65,15 @@ class Settings(BaseSettings):
     @property
     def topup_presets(self) -> list[int]:
         return [int(x) for x in self.topup_presets_toman.split(",") if x.strip().isdigit()]
+
+    @property
+    def premium_emoji_map(self) -> dict[str, str]:
+        out: dict[str, str] = {}
+        for part in self.premium_emoji.split(","):
+            key, _, eid = part.strip().partition(":")
+            if key.strip() and eid.strip().isdigit():
+                out[key.strip()] = eid.strip()
+        return out
 
     @property
     def model_choices(self) -> list[tuple[str, str]]:

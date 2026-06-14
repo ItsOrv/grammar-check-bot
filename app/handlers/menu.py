@@ -32,11 +32,11 @@ async def _render_menu(message: Message, sessionmaker: async_sessionmaker, setti
     text, kb = main_menu_text(balance), main_menu_keyboard()
     if edit:
         try:
-            await message.edit_text(text, reply_markup=kb)
+            await message.edit_text(text, reply_markup=kb, parse_mode="HTML")
             return
         except Exception:
             pass
-    await message.answer(text, reply_markup=kb)
+    await message.answer(text, reply_markup=kb, parse_mode="HTML")
 
 
 @router.message(Command("start", "menu"), F.chat.type == "private")
@@ -64,7 +64,7 @@ async def cb_usage(callback: CallbackQuery, sessionmaker: async_sessionmaker, se
         u["prompt_tokens"], u["completion_tokens"], wallet.spent_toman, wallet.balance_toman,
     )
     try:
-        await callback.message.edit_text(text, reply_markup=usage_keyboard())
+        await callback.message.edit_text(text, reply_markup=usage_keyboard(), parse_mode="HTML")
     except Exception:
         pass
     await callback.answer()
@@ -75,7 +75,9 @@ async def cb_model(callback: CallbackQuery, sessionmaker: async_sessionmaker, se
     async with sessionmaker() as session:
         current = await repo.get_model(session, callback.message.chat.id, settings.llm_model)
     try:
-        await callback.message.edit_text(model_text(current), reply_markup=model_keyboard(current, settings.model_choices))
+        await callback.message.edit_text(
+            model_text(current), reply_markup=model_keyboard(current, settings.model_choices), parse_mode="HTML"
+        )
     except Exception:
         pass
     await callback.answer()
@@ -93,7 +95,9 @@ async def cb_set_model(callback: CallbackQuery, sessionmaker: async_sessionmaker
     async with sessionmaker() as session:
         await repo.set_model(session, callback.message.chat.id, model_id)
     try:
-        await callback.message.edit_text(model_text(model_id), reply_markup=model_keyboard(model_id, settings.model_choices))
+        await callback.message.edit_text(
+            model_text(model_id), reply_markup=model_keyboard(model_id, settings.model_choices), parse_mode="HTML"
+        )
     except Exception:
         pass
     await callback.answer(f"مدل: {model_id} ✅")
@@ -112,6 +116,7 @@ async def cb_settings(callback: CallbackQuery, sessionmaker: async_sessionmaker,
         await callback.message.edit_text(
             settings_text(level, whitelist, settings, enabled, model),
             reply_markup=settings_keyboard(level, enabled, is_admin=show_stats),
+            parse_mode="HTML",
         )
     except Exception:
         pass
