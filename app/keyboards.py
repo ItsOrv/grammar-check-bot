@@ -29,7 +29,7 @@ def settings_keyboard(current_level: str, enabled: bool, is_admin: bool = False)
     return builder.as_markup()
 
 
-def settings_text(level: str, whitelist_count: int, settings: Settings, enabled: bool) -> str:
+def settings_text(level: str, whitelist_count: int, settings: Settings, enabled: bool, model: str) -> str:
     state = "🟢 running" if enabled else "🔴 stopped"
     return (
         "⚙️ Grammar check settings\n"
@@ -37,9 +37,62 @@ def settings_text(level: str, whitelist_count: int, settings: Settings, enabled:
         f"• Level: {level}\n"
         f"• Whitelist: {whitelist_count} term(s)\n"
         f"• Cooldown: {settings.cooldown_seconds}s per user\n"
-        f"• Model: {settings.llm_model}\n\n"
+        f"• Model: {model}\n\n"
         "Pick a strictness level:"
     )
+
+
+# --- main menu (shown on /start and /menu) ----------------------------------
+
+
+def main_menu_text(balance_toman: float) -> str:
+    return (
+        "👋 سلام! من یه ربات گرامر انگلیسی‌ام.\n"
+        "اینجا جمله بفرست تا چک کنم، یا منو به گروهت اضافه کن.\n\n"
+        f"💰 موجودی: {int(balance_toman):,} تومان\n\n"
+        "از منوی زیر انتخاب کن:"
+    )
+
+
+def main_menu_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="💰 موجودی و شارژ", callback_data="wallet:show")
+    b.button(text="📊 مصرف من", callback_data="menu:usage")
+    b.button(text="🧠 مدل زبانی", callback_data="menu:model")
+    b.button(text="⚙️ تنظیمات", callback_data="menu:settings")
+    b.adjust(2, 2)
+    return b.as_markup()
+
+
+def model_text(current: str) -> str:
+    return f"🧠 مدل زبانی فعلی: {current}\n\nیکی از مدل‌های زیر رو انتخاب کن:"
+
+
+def model_keyboard(current: str, choices: list[tuple[str, str]]) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    for mid, label in choices:
+        mark = "▸ " if mid == current else ""
+        b.button(text=f"{mark}{label}", callback_data=f"model:{mid}")
+    b.button(text="⬅️ منوی اصلی", callback_data="menu:home")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def usage_text(name: str, requests: int, replies: int, prompt_t: int, completion_t: int, spent_toman: float, balance_toman: float) -> str:
+    return (
+        f"📊 مصرف {name}\n\n"
+        f"• درخواست‌ها: {requests:,}\n"
+        f"• اصلاحیه‌های دریافتی: {replies:,}\n"
+        f"• توکن‌ها: {prompt_t:,} ورودی / {completion_t:,} خروجی\n"
+        f"• هزینه‌ی کسرشده: {int(spent_toman):,} تومان\n"
+        f"• موجودی فعلی: {int(balance_toman):,} تومان"
+    )
+
+
+def usage_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="⬅️ منوی اصلی", callback_data="menu:home")
+    return b.as_markup()
 
 
 def stats_text(scope: str, stats: dict) -> str:

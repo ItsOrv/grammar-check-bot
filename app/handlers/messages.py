@@ -85,14 +85,15 @@ async def on_text(
         if level == "off":
             return
         whitelist = await repo.get_whitelist(session, message.chat.id)
+        model = await repo.get_model(session, message.chat.id, settings.llm_model)
 
     if not await _check_wallet(message, settings, sessionmaker, user):
         logger.info("skip (no balance) chat=%s user=%s", message.chat.id, user.id)
         return
 
-    logger.info("checking chat=%s user=%s level=%s text=%.80r", message.chat.id, user.id, level, message.text)
+    logger.info("checking chat=%s user=%s level=%s model=%s", message.chat.id, user.id, level, model)
     async with llm_semaphore:
-        result, usage = await checker.check(message.text, level, whitelist)
+        result, usage = await checker.check(message.text, level, whitelist, model=model)
 
     will_reply = should_reply(result, level, message.text, settings.confidence_threshold)
     cost_usd = usage.cost(settings.price_input_per_million, settings.price_output_per_million)

@@ -38,10 +38,12 @@ class OpenAICompatibleChecker:
         self.model = model
         self.client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
 
-    async def check(self, text: str, level: str, whitelist: list[str]) -> tuple[GrammarResult | None, Usage]:
+    async def check(
+        self, text: str, level: str, whitelist: list[str], model: str | None = None
+    ) -> tuple[GrammarResult | None, Usage]:
         try:
             response = await self.client.chat.completions.create(
-                model=self.model,
+                model=model or self.model,
                 # Reasoning models (e.g. deepseek-v4) spend ~2K tokens thinking before the JSON;
                 # a low cap leaves the content empty.
                 max_tokens=4096,
@@ -67,10 +69,10 @@ class OpenAICompatibleChecker:
             return None, usage
         return parse_result(data), usage
 
-    async def translate(self, text: str, level: str) -> tuple[str | None, Usage]:
+    async def translate(self, text: str, level: str, model: str | None = None) -> tuple[str | None, Usage]:
         try:
             response = await self.client.chat.completions.create(
-                model=self.model,
+                model=model or self.model,
                 max_tokens=2048,
                 temperature=0.3,
                 messages=[

@@ -16,6 +16,8 @@ class ChatSettings(Base):
     # Master on/off switch flipped by the stop/start button, kept separate from
     # the strictness level so pausing doesn't forget which level you were on.
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Which LLM model this chat uses; null = fall back to the configured default.
+    model: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

@@ -15,7 +15,10 @@ def create_engine_and_sessionmaker(db_path: str) -> tuple[AsyncEngine, async_ses
 # Columns added to existing tables after the first release. create_all() only
 # makes missing tables, so older DBs need these patched in by hand.
 _MIGRATIONS = {
-    "chat_settings": {"enabled": "BOOLEAN NOT NULL DEFAULT 1"},
+    "chat_settings": {
+        "enabled": "BOOLEAN NOT NULL DEFAULT 1",
+        "model": "VARCHAR(64)",
+    },
 }
 
 

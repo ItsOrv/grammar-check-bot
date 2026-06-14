@@ -117,10 +117,10 @@ class Usage:
 
 class GrammarChecker(Protocol):
     async def check(
-        self, text: str, level: str, whitelist: list[str]
+        self, text: str, level: str, whitelist: list[str], model: str | None = None
     ) -> tuple[GrammarResult | None, Usage]: ...
 
-    async def translate(self, text: str, level: str) -> tuple[str | None, Usage]: ...
+    async def translate(self, text: str, level: str, model: str | None = None) -> tuple[str | None, Usage]: ...
 
 
 def translation_tone_level(level: str) -> str:

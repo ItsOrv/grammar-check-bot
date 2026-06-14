@@ -124,9 +124,10 @@ async def cmd_translate(
 
     async with sessionmaker() as session:
         level = await repo.get_level(session, message.chat.id)
+        model = await repo.get_model(session, message.chat.id, settings.llm_model)
 
     async with llm_semaphore:
-        translation, usage = await checker.translate(text, level)
+        translation, usage = await checker.translate(text, level, model=model)
 
     if user:
         cost = usage.cost(settings.price_input_per_million, settings.price_output_per_million)
@@ -152,8 +153,9 @@ async def cmd_settings(message: Message, sessionmaker: async_sessionmaker, setti
         level = await repo.get_level(session, message.chat.id)
         enabled = await repo.is_enabled(session, message.chat.id)
         whitelist = await repo.get_whitelist(session, message.chat.id)
+        model = await repo.get_model(session, message.chat.id, settings.llm_model)
     await message.reply(
-        settings_text(level, len(whitelist), settings, enabled),
+        settings_text(level, len(whitelist), settings, enabled, model),
         reply_markup=settings_keyboard(level, enabled, is_admin=show_stats),
     )
 

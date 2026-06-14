@@ -7,7 +7,7 @@ from aiogram.types import BotCommand, BotCommandScopeAllGroupChats, BotCommandSc
 
 from app.config import Settings
 from app.database.session import create_engine_and_sessionmaker, init_db
-from app.handlers import callbacks, commands, membership, messages, private, wallet
+from app.handlers import callbacks, commands, membership, menu, messages, private, wallet
 from app.services.cooldown import Cooldown
 from app.services.llm import create_checker
 from app.services.payments.nowpayments import NowPayments
@@ -31,9 +31,10 @@ GROUP_COMMANDS = [
 ]
 
 PRIVATE_COMMANDS = [
-    BotCommand(command="start", description="What I do and how to use me"),
-    BotCommand(command="settings", description="Pick a strictness level"),
+    BotCommand(command="start", description="Open the main menu"),
+    BotCommand(command="menu", description="Open the main menu"),
     BotCommand(command="wallet", description="Your balance and top-up"),
+    BotCommand(command="settings", description="Pick a strictness level"),
     BotCommand(command="t", description="Translate text to English"),
     BotCommand(command="stop", description="Pause checking here"),
     BotCommand(command="resume", description="Resume checking here"),
@@ -67,6 +68,7 @@ async def main() -> None:
     )
     dp.include_router(commands.router)
     dp.include_router(callbacks.router)
+    dp.include_router(menu.router)
     dp.include_router(wallet.router)
     dp.include_router(membership.router)
     dp.include_router(private.router)

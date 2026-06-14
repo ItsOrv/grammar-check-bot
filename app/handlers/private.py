@@ -18,7 +18,7 @@ WELCOME = (
 )
 
 
-@router.message(Command("start", "help"))
-async def on_start(message: Message):
+@router.message(Command("help"))
+async def on_help(message: Message):
     me = await message.bot.me()
     await message.answer(WELCOME, reply_markup=add_to_group_keyboard(me.username))

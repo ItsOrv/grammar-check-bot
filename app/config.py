@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     llm_model: str = "deepseek-chat"
     llm_api_key: str
     llm_base_url: str | None = None
+    # Models a user can pick from the menu. Format: "id:label,id:label".
+    available_models: str = "deepseek-v4-flash:Flash (cheaper),deepseek-v4-pro:Pro (sharper)"
 
     db_path: str = "data/bot.db"
 
@@ -58,3 +60,14 @@ class Settings(BaseSettings):
     @property
     def topup_presets(self) -> list[int]:
         return [int(x) for x in self.topup_presets_toman.split(",") if x.strip().isdigit()]
+
+    @property
+    def model_choices(self) -> list[tuple[str, str]]:
+        out: list[tuple[str, str]] = []
+        for part in self.available_models.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            mid, _, label = part.partition(":")
+            out.append((mid.strip(), (label.strip() or mid.strip())))
+        return out

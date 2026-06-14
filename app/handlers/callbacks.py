@@ -43,9 +43,10 @@ async def _render_settings(callback: CallbackQuery, sessionmaker: async_sessionm
         level = await repo.get_level(session, chat_id)
         enabled = await repo.is_enabled(session, chat_id)
         whitelist_count = len(await repo.get_whitelist(session, chat_id))
+        model = await repo.get_model(session, chat_id, settings.llm_model)
     try:
         await callback.message.edit_text(
-            settings_text(level, whitelist_count, settings, enabled),
+            settings_text(level, whitelist_count, settings, enabled, model),
             reply_markup=settings_keyboard(level, enabled, is_admin=show_stats),
         )
     except TelegramBadRequest:

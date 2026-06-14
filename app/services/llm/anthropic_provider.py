@@ -35,10 +35,12 @@ class AnthropicChecker:
             kwargs["base_url"] = base_url
         self.client = anthropic.AsyncAnthropic(**kwargs)
 
-    async def check(self, text: str, level: str, whitelist: list[str]) -> tuple[GrammarResult | None, Usage]:
+    async def check(
+        self, text: str, level: str, whitelist: list[str], model: str | None = None
+    ) -> tuple[GrammarResult | None, Usage]:
         try:
             response = await self.client.messages.create(
-                model=self.model,
+                model=model or self.model,
                 max_tokens=4096,
                 system=SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": build_user_prompt(text, level, whitelist)}],
@@ -63,10 +65,10 @@ class AnthropicChecker:
             return None, usage
         return parse_result(data), usage
 
-    async def translate(self, text: str, level: str) -> tuple[str | None, Usage]:
+    async def translate(self, text: str, level: str, model: str | None = None) -> tuple[str | None, Usage]:
         try:
             response = await self.client.messages.create(
-                model=self.model,
+                model=model or self.model,
                 max_tokens=2048,
                 system=TRANSLATE_SYSTEM,
                 messages=[{"role": "user", "content": build_translate_prompt(text, level)}],

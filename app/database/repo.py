@@ -47,6 +47,17 @@ async def set_enabled(session: AsyncSession, chat_id: int, enabled: bool) -> Non
     await session.commit()
 
 
+async def get_model(session: AsyncSession, chat_id: int, default: str) -> str:
+    settings = await session.get(ChatSettings, chat_id)
+    return settings.model if (settings and settings.model) else default
+
+
+async def set_model(session: AsyncSession, chat_id: int, model: str) -> None:
+    settings = await _get_or_create_settings(session, chat_id)
+    settings.model = model
+    await session.commit()
+
+
 async def get_whitelist(session: AsyncSession, chat_id: int) -> list[str]:
     rows = await session.scalars(
         select(WhitelistEntry.word).where(WhitelistEntry.chat_id == chat_id).order_by(WhitelistEntry.word)
@@ -117,6 +128,26 @@ async def get_user_total_cost(session: AsyncSession, user_id: int) -> float:
     """How much this user has spent across every chat."""
     total = await session.scalar(select(func.coalesce(func.sum(Usage.cost), 0.0)).where(Usage.user_id == user_id))
     return float(total or 0.0)
+
+
+async def get_user_usage(session: AsyncSession, user_id: int) -> dict:
+    """This user's own totals, summed across every chat (for the 'my usage' view)."""
+    row = (
+        await session.execute(
+            select(
+                func.coalesce(func.sum(Usage.requests), 0),
+                func.coalesce(func.sum(Usage.replies), 0),
+                func.coalesce(func.sum(Usage.prompt_tokens), 0),
+                func.coalesce(func.sum(Usage.completion_tokens), 0),
+            ).where(Usage.user_id == user_id)
+        )
+    ).one()
+    return {
+        "requests": int(row[0]),
+        "replies": int(row[1]),
+        "prompt_tokens": int(row[2]),
+        "completion_tokens": int(row[3]),
+    }
 
 
 async def is_limit_notified(session: AsyncSession, chat_id: int, user_id: int) -> bool:
