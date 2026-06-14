@@ -57,12 +57,17 @@ pip install -r requirements.txt
 python -m app.main
 ```
 
-Or with Docker:
+Or with Docker Compose (recommended):
 
 ```bash
-docker build -t grammar-check-bot .
-docker run -d --env-file .env -v $(pwd)/data:/app/data grammar-check-bot
+docker compose up -d --build      # build and start in the background
+docker compose logs -f            # follow logs
+docker compose restart            # after changing code or .env
+docker compose down               # stop
 ```
+
+The compose file persists the SQLite db via the `./data` volume and publishes the
+crypto IPN webhook on `127.0.0.1:${WEBHOOK_PORT}` so a reverse proxy can reach it.
 
 ## Testing
 
