@@ -15,8 +15,9 @@ async def main() -> None:
     settings = Settings()
     checker = create_checker(settings)
     for level in ("strict", "normal", "casual"):
-        result = await checker.check(text, level, whitelist=[])
-        print(f"[{level}] {result}")
+        result, usage = await checker.check(text, level, whitelist=[])
+        cost = usage.cost(settings.price_input_per_million, settings.price_output_per_million)
+        print(f"[{level}] {result}  (cost=${cost:.5f})")
 
 
 if __name__ == "__main__":

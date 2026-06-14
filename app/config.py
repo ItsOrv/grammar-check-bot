@@ -20,6 +20,13 @@ class Settings(BaseSettings):
     confidence_threshold: float = 0.8
     max_concurrent_llm: int = 5
 
+    # Per-user spending cap on the LLM API (USD). Once a user goes over this the
+    # bot stops checking their messages. Prices are per 1M tokens so the cost
+    # math stays right even if you switch models.
+    usage_limit_usd: float = 0.30
+    price_input_per_million: float = 0.07
+    price_output_per_million: float = 0.28
+
     log_level: str = "INFO"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")

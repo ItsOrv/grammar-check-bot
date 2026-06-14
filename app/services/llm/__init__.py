@@ -1,7 +1,7 @@
 from app.config import Settings
-from app.services.llm.base import GrammarChecker, GrammarResult, should_reply
+from app.services.llm.base import GrammarChecker, GrammarResult, Usage, should_reply
 
-__all__ = ["GrammarChecker", "GrammarResult", "create_checker", "should_reply"]
+__all__ = ["GrammarChecker", "GrammarResult", "Usage", "create_checker", "should_reply"]
 
 
 def create_checker(settings: Settings) -> GrammarChecker:

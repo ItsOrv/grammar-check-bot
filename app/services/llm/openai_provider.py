@@ -8,6 +8,7 @@ from app.services.llm.base import (
     SYSTEM_PROMPT,
     TRANSLATE_SYSTEM,
     GrammarResult,
+    Usage,
     build_translate_prompt,
     build_user_prompt,
     parse_result,
@@ -23,6 +24,13 @@ _JSON_INSTRUCTIONS = (
 )
 
 
+def _usage(response) -> Usage:
+    u = getattr(response, "usage", None)
+    if not u:
+        return Usage()
+    return Usage(prompt_tokens=u.prompt_tokens or 0, completion_tokens=u.completion_tokens or 0)
+
+
 class OpenAICompatibleChecker:
     """Works with any OpenAI-compatible API: DeepSeek, OpenRouter, Groq, ..."""
 
@@ -30,7 +38,7 @@ class OpenAICompatibleChecker:
         self.model = model
         self.client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
 
-    async def check(self, text: str, level: str, whitelist: list[str]) -> GrammarResult | None:
+    async def check(self, text: str, level: str, whitelist: list[str]) -> tuple[GrammarResult | None, Usage]:
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -46,19 +54,20 @@ class OpenAICompatibleChecker:
             )
         except openai.OpenAIError as e:
             logger.warning("LLM API error: %s", e)
-            return None
+            return None, Usage()
 
+        usage = _usage(response)
         raw = response.choices[0].message.content if response.choices else None
         if not raw:
-            return None
+            return None, usage
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
             logger.warning("LLM returned non-JSON output: %.200s", raw)
-            return None
-        return parse_result(data)
+            return None, usage
+        return parse_result(data), usage
 
-    async def translate(self, text: str, level: str) -> str | None:
+    async def translate(self, text: str, level: str) -> tuple[str | None, Usage]:
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -71,7 +80,8 @@ class OpenAICompatibleChecker:
             )
         except openai.OpenAIError as e:
             logger.warning("LLM API error (translate): %s", e)
-            return None
+            return None, Usage()
 
+        usage = _usage(response)
         raw = response.choices[0].message.content if response.choices else None
-        return raw.strip() if raw and raw.strip() else None
+        return (raw.strip() if raw and raw.strip() else None), usage

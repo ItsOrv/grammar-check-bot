@@ -101,10 +101,26 @@ class GrammarResult:
     explanation: str
 
 
-class GrammarChecker(Protocol):
-    async def check(self, text: str, level: str, whitelist: list[str]) -> GrammarResult | None: ...
+@dataclass
+class Usage:
+    """Tokens a single LLM call burned, so we can bill it back to the user."""
 
-    async def translate(self, text: str, level: str) -> str | None: ...
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+
+    def cost(self, price_input_per_million: float, price_output_per_million: float) -> float:
+        return (
+            self.prompt_tokens * price_input_per_million
+            + self.completion_tokens * price_output_per_million
+        ) / 1_000_000
+
+
+class GrammarChecker(Protocol):
+    async def check(
+        self, text: str, level: str, whitelist: list[str]
+    ) -> tuple[GrammarResult | None, Usage]: ...
+
+    async def translate(self, text: str, level: str) -> tuple[str | None, Usage]: ...
 
 
 def translation_tone_level(level: str) -> str:

@@ -8,12 +8,23 @@ from app.services.llm.base import (
     SYSTEM_PROMPT,
     TRANSLATE_SYSTEM,
     GrammarResult,
+    Usage,
     build_translate_prompt,
     build_user_prompt,
     parse_result,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _usage(response) -> Usage:
+    u = getattr(response, "usage", None)
+    if not u:
+        return Usage()
+    return Usage(
+        prompt_tokens=getattr(u, "input_tokens", 0) or 0,
+        completion_tokens=getattr(u, "output_tokens", 0) or 0,
+    )
 
 
 class AnthropicChecker:
@@ -24,7 +35,7 @@ class AnthropicChecker:
             kwargs["base_url"] = base_url
         self.client = anthropic.AsyncAnthropic(**kwargs)
 
-    async def check(self, text: str, level: str, whitelist: list[str]) -> GrammarResult | None:
+    async def check(self, text: str, level: str, whitelist: list[str]) -> tuple[GrammarResult | None, Usage]:
         try:
             response = await self.client.messages.create(
                 model=self.model,
@@ -35,23 +46,24 @@ class AnthropicChecker:
             )
         except anthropic.APIError as e:
             logger.warning("Anthropic API error: %s", e)
-            return None
+            return None, Usage()
 
+        usage = _usage(response)
         if response.stop_reason == "refusal":
             logger.warning("Anthropic request refused")
-            return None
+            return None, usage
 
         raw = next((block.text for block in response.content if block.type == "text"), None)
         if raw is None:
-            return None
+            return None, usage
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
             logger.warning("Anthropic returned non-JSON output: %.200s", raw)
-            return None
-        return parse_result(data)
+            return None, usage
+        return parse_result(data), usage
 
-    async def translate(self, text: str, level: str) -> str | None:
+    async def translate(self, text: str, level: str) -> tuple[str | None, Usage]:
         try:
             response = await self.client.messages.create(
                 model=self.model,
@@ -61,11 +73,12 @@ class AnthropicChecker:
             )
         except anthropic.APIError as e:
             logger.warning("Anthropic API error (translate): %s", e)
-            return None
+            return None, Usage()
 
+        usage = _usage(response)
         if response.stop_reason == "refusal":
             logger.warning("Anthropic translate request refused")
-            return None
+            return None, usage
 
         raw = next((block.text for block in response.content if block.type == "text"), None)
-        return raw.strip() if raw and raw.strip() else None
+        return (raw.strip() if raw and raw.strip() else None), usage
