@@ -23,6 +23,54 @@ class ChatSettings(Base):
     )
 
 
+class Wallet(Base):
+    """A user's money. Everything here is in Toman."""
+
+    __tablename__ = "wallet"
+
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), default="")
+    balance_toman: Mapped[float] = mapped_column(Float, default=0.0)
+    spent_toman: Mapped[float] = mapped_column(Float, default=0.0)
+    # Whether the one-time free credit was already handed out.
+    free_granted: Mapped[bool] = mapped_column(Boolean, default=False)
+    # So we only nag about an empty balance once.
+    low_balance_notified: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class Payment(Base):
+    """A top-up attempt, card-to-card or crypto."""
+
+    __tablename__ = "payment"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    order_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    method: Mapped[str] = mapped_column(String(16))  # "card" or "crypto"
+    amount_toman: Mapped[float] = mapped_column(Float, default=0.0)
+    amount_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    # pending -> finished/approved (credited) or rejected/failed/expired
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    provider_id: Mapped[str] = mapped_column(String(128), default="")  # NOWPayments invoice/payment id
+    note: Mapped[str] = mapped_column(String(512), default="")  # receipt text, admin note, etc.
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 class Usage(Base):
     """What each user spent, per chat. Cost is in USD."""
 

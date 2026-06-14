@@ -10,6 +10,7 @@ from app.config import Settings
 from app.database import repo
 from app.keyboards import settings_keyboard, settings_text, stats_keyboard, stats_text
 from app.services.llm import GrammarChecker
+from app.services.rate import RateProvider, cost_to_toman
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,7 @@ async def cmd_translate(
     sessionmaker: async_sessionmaker,
     checker: GrammarChecker,
     settings: Settings,
+    rate: RateProvider,
     llm_semaphore: asyncio.Semaphore,
 ):
     # Text to translate: command args, or the replied-to message's text.
@@ -113,9 +115,11 @@ async def cmd_translate(
     user = message.from_user
     if user:
         async with sessionmaker() as session:
-            spent = await repo.get_user_total_cost(session, user.id)
-        if spent >= settings.usage_limit_usd:
-            await message.reply(f"😅 You've used up your ${settings.usage_limit_usd:.2f} of API credit.")
+            wallet, _ = await repo.get_or_create_wallet(
+                session, user.id, user.full_name, settings.free_credit_toman
+            )
+        if wallet.balance_toman <= 0:
+            await message.reply("💸 موجودی کیف پولت تموم شده. با /wallet شارژ کن.")
             return
 
     async with sessionmaker() as session:
@@ -126,11 +130,14 @@ async def cmd_translate(
 
     if user:
         cost = usage.cost(settings.price_input_per_million, settings.price_output_per_million)
+        toman = cost_to_toman(cost, await rate.get_rate(), settings.price_markup)
         async with sessionmaker() as session:
             await repo.record_usage(
                 session, message.chat.id, user.id, user.full_name,
                 usage.prompt_tokens, usage.completion_tokens, cost, replied=bool(translation),
             )
+            if toman > 0:
+                await repo.deduct(session, user.id, toman)
 
     if not translation:
         await message.reply("Couldn't translate right now, please try again.")
@@ -160,9 +167,10 @@ async def cmd_stats(message: Message, sessionmaker: async_sessionmaker, settings
     scope_chat = None if is_owner else message.chat.id
     scope_label = "all chats" if is_owner else "this chat"
     async with sessionmaker() as session:
-        stats = await repo.get_stats(session, scope_chat, settings.usage_limit_usd)
+        stats = await repo.get_stats(session, scope_chat)
+        stats["wallet"] = await repo.get_wallet_stats(session) if is_owner else None
     await message.reply(
-        stats_text(scope_label, stats, settings.usage_limit_usd),
+        stats_text(scope_label, stats),
         reply_markup=stats_keyboard(),
     )
 

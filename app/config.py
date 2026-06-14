@@ -20,12 +20,32 @@ class Settings(BaseSettings):
     confidence_threshold: float = 0.8
     max_concurrent_llm: int = 5
 
-    # Per-user spending cap on the LLM API (USD). Once a user goes over this the
-    # bot stops checking their messages. Prices are per 1M tokens so the cost
-    # math stays right even if you switch models.
-    usage_limit_usd: float = 0.30
+    # Token prices (per 1M tokens) so we can work out the raw USD cost of a call.
     price_input_per_million: float = 0.07
     price_output_per_million: float = 0.28
+
+    # --- Wallet / billing (everything the user sees is in Toman) ---
+    # Free credit handed out the first time someone starts the bot.
+    free_credit_toman: int = 50_000
+    # Markup on the raw API cost. 1.40 means we charge 40% over what it costs us.
+    price_markup: float = 1.40
+    # USD -> Toman. Pulled live from rate_api_url; this is the fallback if that fails.
+    usd_to_toman_fallback: float = 170_000.0
+    rate_api_url: str = "https://api.wallex.ir/v1/markets"
+    rate_ttl_seconds: int = 600
+    # Preset top-up amounts (Toman) shown as buttons.
+    topup_presets_toman: str = "50000,100000,200000"
+
+    # --- Card to card (manual, admin-approved) ---
+    card_number: str = ""
+    card_holder: str = ""
+
+    # --- Crypto via NOWPayments ---
+    nowpayments_api_key: str = ""
+    nowpayments_ipn_secret: str = ""
+    nowpayments_ipn_url: str = ""  # public https URL NOWPayments will call back
+    webhook_host: str = "0.0.0.0"
+    webhook_port: int = 8080
 
     log_level: str = "INFO"
 
@@ -34,3 +54,7 @@ class Settings(BaseSettings):
     @property
     def admin_id_set(self) -> set[int]:
         return {int(x) for x in self.admin_ids.split(",") if x.strip().isdigit()}
+
+    @property
+    def topup_presets(self) -> list[int]:
+        return [int(x) for x in self.topup_presets_toman.split(",") if x.strip().isdigit()]

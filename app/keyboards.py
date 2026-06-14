@@ -20,7 +20,10 @@ def settings_keyboard(current_level: str, enabled: bool, is_admin: bool = False)
     # The master switch. Shows what tapping it will do, not the current state.
     power = "⏸ Stop the bot" if enabled else "▶️ Start the bot"
     builder.row(InlineKeyboardButton(text=power, callback_data="power:toggle"))
-    builder.row(InlineKeyboardButton(text="📝 Whitelist", callback_data="whitelist:help"))
+    builder.row(
+        InlineKeyboardButton(text="📝 Whitelist", callback_data="whitelist:help"),
+        InlineKeyboardButton(text="💰 Wallet", callback_data="wallet:show"),
+    )
     if is_admin:
         builder.row(InlineKeyboardButton(text="📊 Statistics", callback_data="stats:show"))
     return builder.as_markup()
@@ -39,7 +42,7 @@ def settings_text(level: str, whitelist_count: int, settings: Settings, enabled:
     )
 
 
-def stats_text(scope: str, stats: dict, limit_usd: float) -> str:
+def stats_text(scope: str, stats: dict) -> str:
     lines = [
         f"📊 Statistics ({scope})",
         "",
@@ -48,9 +51,18 @@ def stats_text(scope: str, stats: dict, limit_usd: float) -> str:
         f"• LLM requests: {stats['requests']}",
         f"• Corrections sent: {stats['replies']}",
         f"• Tokens: {stats['prompt_tokens']:,} in / {stats['completion_tokens']:,} out",
-        f"• Total cost: ${stats['cost']:.4f}",
-        f"• Over the ${limit_usd:.2f} cap: {stats['over_limit']} user(s)",
+        f"• Raw API cost: ${stats['cost']:.4f}",
     ]
+    wallet = stats.get("wallet")
+    if wallet:
+        lines += [
+            "",
+            "💰 Wallets:",
+            f"• Wallets: {wallet['wallets']}",
+            f"• Balance held: {int(wallet['balance_toman']):,} Toman",
+            f"• Charged to users: {int(wallet['spent_toman']):,} Toman",
+            f"• Topped up: {int(wallet['topped_up_toman']):,} Toman",
+        ]
     if stats["top"]:
         lines.append("")
         lines.append("Top spenders:")

@@ -10,30 +10,45 @@ from app.database import repo
 from app.services import prefilter
 from app.services.cooldown import Cooldown
 from app.services.llm import GrammarChecker, should_reply
+from app.services.rate import RateProvider, cost_to_toman
 
 logger = logging.getLogger(__name__)
 
 router = Router(name="messages")
 
 
-async def _over_limit(message: Message, settings: Settings, sessionmaker: async_sessionmaker, user_id: int) -> bool:
-    """True if the user blew through their spending cap. Tells them once, then stays quiet."""
+async def _check_wallet(message: Message, settings: Settings, sessionmaker: async_sessionmaker, user) -> bool:
+    """Make sure the user has a wallet (with free credit) and some balance left.
+    Returns True if they're good to go."""
     async with sessionmaker() as session:
-        spent = await repo.get_user_total_cost(session, user_id)
-        if spent < settings.usage_limit_usd:
-            return False
-        already_told = await repo.is_limit_notified(session, message.chat.id, user_id)
-        if not already_told:
-            await repo.mark_limit_notified(session, message.chat.id, user_id)
-    if not already_told:
+        wallet, granted = await repo.get_or_create_wallet(
+            session, user.id, user.full_name, settings.free_credit_toman
+        )
+        balance = wallet.balance_toman
+        low_notified = wallet.low_balance_notified
+
+    if granted and message.chat.type == "private":
         try:
-            await message.reply(
-                f"😅 You've hit your usage limit (${settings.usage_limit_usd:.2f} of API credit), "
-                "so I'll stop checking your messages for now."
+            await message.answer(
+                f"🎁 {int(settings.free_credit_toman):,} تومان اعتبار رایگان بهت دادم. "
+                "هر وقت تموم شد می‌تونی با /wallet شارژ کنی."
             )
         except Exception:
-            logger.exception("Failed to send limit notice")
-    return True
+            logger.exception("failed to send free-credit notice")
+
+    if balance > 0:
+        return True
+
+    if not low_notified:
+        async with sessionmaker() as session:
+            await repo.mark_low_balance_notified(session, user.id)
+        try:
+            await message.reply(
+                "💸 موجودی کیف پولت تموم شده. برای ادامه با /wallet شارژ کن."
+            )
+        except Exception:
+            logger.exception("failed to send low-balance notice")
+    return False
 
 
 @router.message(F.chat.type.in_({"group", "supergroup", "private"}), F.text)
@@ -43,6 +58,7 @@ async def on_text(
     sessionmaker: async_sessionmaker,
     checker: GrammarChecker,
     cooldown: Cooldown,
+    rate: RateProvider,
     llm_semaphore: asyncio.Semaphore,
 ):
     user = message.from_user
@@ -70,8 +86,8 @@ async def on_text(
             return
         whitelist = await repo.get_whitelist(session, message.chat.id)
 
-    if await _over_limit(message, settings, sessionmaker, user.id):
-        logger.info("skip (limit) chat=%s user=%s", message.chat.id, user.id)
+    if not await _check_wallet(message, settings, sessionmaker, user):
+        logger.info("skip (no balance) chat=%s user=%s", message.chat.id, user.id)
         return
 
     logger.info("checking chat=%s user=%s level=%s text=%.80r", message.chat.id, user.id, level, message.text)
@@ -79,22 +95,20 @@ async def on_text(
         result, usage = await checker.check(message.text, level, whitelist)
 
     will_reply = should_reply(result, level, message.text, settings.confidence_threshold)
-    cost = usage.cost(settings.price_input_per_million, settings.price_output_per_million)
+    cost_usd = usage.cost(settings.price_input_per_million, settings.price_output_per_million)
+    toman = cost_to_toman(cost_usd, await rate.get_rate(), settings.price_markup)
     logger.info(
-        "result chat=%s user=%s %s cost=$%.5f -> reply=%s", message.chat.id, user.id, result, cost, will_reply
+        "result chat=%s user=%s %s cost=$%.5f/%dT -> reply=%s",
+        message.chat.id, user.id, result, cost_usd, toman, will_reply,
     )
 
     async with sessionmaker() as session:
         await repo.record_usage(
-            session,
-            message.chat.id,
-            user.id,
-            user.full_name,
-            usage.prompt_tokens,
-            usage.completion_tokens,
-            cost,
-            replied=will_reply,
+            session, message.chat.id, user.id, user.full_name,
+            usage.prompt_tokens, usage.completion_tokens, cost_usd, replied=will_reply,
         )
+        if toman > 0:
+            await repo.deduct(session, user.id, toman)
 
     if not will_reply:
         return

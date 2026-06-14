@@ -1,7 +1,7 @@
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database.models import ChatSettings, Usage, WhitelistEntry
+from app.database.models import ChatSettings, Payment, Usage, Wallet, WhitelistEntry
 
 DEFAULT_LEVEL = "normal"
 LEVELS = ("strict", "normal", "casual", "off")
@@ -139,7 +139,7 @@ async def mark_limit_notified(session: AsyncSession, chat_id: int, user_id: int)
 # --- statistics -------------------------------------------------------------
 
 
-async def get_stats(session: AsyncSession, chat_id: int | None, limit_usd: float) -> dict:
+async def get_stats(session: AsyncSession, chat_id: int | None) -> dict:
     """Aggregate usage. Pass chat_id=None for global stats across all chats."""
     scope = []
     if chat_id is not None:
@@ -159,14 +159,6 @@ async def get_stats(session: AsyncSession, chat_id: int | None, limit_usd: float
             ).where(*scope)
         )
     ).one()
-
-    # Spend per user (summed across chats when global) to count who's over the cap.
-    per_user = (
-        await session.execute(
-            select(Usage.user_id, func.sum(Usage.cost)).where(*scope).group_by(Usage.user_id)
-        )
-    ).all()
-    over_limit = sum(1 for _, c in per_user if (c or 0.0) >= limit_usd)
 
     top = (
         await session.execute(
@@ -192,7 +184,6 @@ async def get_stats(session: AsyncSession, chat_id: int | None, limit_usd: float
         "cost": float(totals[5]),
         "users": int(totals[6]),
         "chats": int(totals[7]),
-        "over_limit": over_limit,
         "top": [
             {"user_id": uid, "name": name or str(uid), "cost": float(c or 0.0), "requests": int(r or 0)}
             for uid, name, c, r in top
@@ -208,3 +199,128 @@ async def reset_usage(session: AsyncSession, chat_id: int | None) -> int:
     result = await session.execute(stmt)
     await session.commit()
     return result.rowcount or 0
+
+
+# --- wallet (Toman) ---------------------------------------------------------
+
+
+async def get_or_create_wallet(
+    session: AsyncSession, user_id: int, name: str, free_credit: float
+) -> tuple[Wallet, bool]:
+    """Return the wallet, creating it (and granting the one-time free credit) on first touch.
+    The bool says whether the free credit was just handed out."""
+    wallet = await session.get(Wallet, user_id)
+    granted_now = False
+    if wallet is None:
+        wallet = Wallet(
+            user_id=user_id, name=name or "", balance_toman=free_credit, spent_toman=0.0,
+            free_granted=True, low_balance_notified=False,
+        )
+        session.add(wallet)
+        granted_now = free_credit > 0
+        await session.commit()
+    elif name and wallet.name != name:
+        wallet.name = name
+        await session.commit()
+    return wallet, granted_now
+
+
+async def get_balance(session: AsyncSession, user_id: int) -> float:
+    wallet = await session.get(Wallet, user_id)
+    return float(wallet.balance_toman) if wallet else 0.0
+
+
+async def deduct(session: AsyncSession, user_id: int, amount_toman: float) -> float:
+    wallet = await session.get(Wallet, user_id)
+    if wallet is None:
+        return 0.0
+    wallet.balance_toman = float(wallet.balance_toman) - amount_toman
+    wallet.spent_toman = float(wallet.spent_toman) + amount_toman
+    await session.commit()
+    return wallet.balance_toman
+
+
+async def credit(session: AsyncSession, user_id: int, amount_toman: float, name: str = "") -> float:
+    wallet = await session.get(Wallet, user_id)
+    if wallet is None:
+        wallet = Wallet(
+            user_id=user_id, name=name or "", balance_toman=0.0, spent_toman=0.0,
+            free_granted=True, low_balance_notified=False,
+        )
+        session.add(wallet)
+    wallet.balance_toman = float(wallet.balance_toman) + amount_toman
+    wallet.low_balance_notified = False  # they have money again
+    await session.commit()
+    return wallet.balance_toman
+
+
+async def is_low_balance_notified(session: AsyncSession, user_id: int) -> bool:
+    wallet = await session.get(Wallet, user_id)
+    return bool(wallet and wallet.low_balance_notified)
+
+
+async def mark_low_balance_notified(session: AsyncSession, user_id: int) -> None:
+    wallet = await session.get(Wallet, user_id)
+    if wallet is not None:
+        wallet.low_balance_notified = True
+        await session.commit()
+
+
+# --- payments ---------------------------------------------------------------
+
+
+async def create_payment(
+    session: AsyncSession, order_id: str, user_id: int, method: str,
+    amount_toman: float, amount_usd: float = 0.0, provider_id: str = "", note: str = "",
+) -> Payment:
+    payment = Payment(
+        order_id=order_id, user_id=user_id, method=method, amount_toman=amount_toman,
+        amount_usd=amount_usd, status="pending", provider_id=provider_id, note=note,
+    )
+    session.add(payment)
+    await session.commit()
+    return payment
+
+
+async def get_payment_by_order(session: AsyncSession, order_id: str) -> Payment | None:
+    return await session.scalar(select(Payment).where(Payment.order_id == order_id))
+
+
+async def set_payment_status(session: AsyncSession, order_id: str, status: str) -> Payment | None:
+    payment = await get_payment_by_order(session, order_id)
+    if payment is not None:
+        payment.status = status
+        await session.commit()
+    return payment
+
+
+async def list_user_payments(session: AsyncSession, user_id: int, limit: int = 10) -> list[Payment]:
+    rows = await session.scalars(
+        select(Payment).where(Payment.user_id == user_id).order_by(Payment.id.desc()).limit(limit)
+    )
+    return list(rows)
+
+
+async def get_wallet_stats(session: AsyncSession) -> dict:
+    row = (
+        await session.execute(
+            select(
+                func.count(Wallet.user_id),
+                func.coalesce(func.sum(Wallet.balance_toman), 0.0),
+                func.coalesce(func.sum(Wallet.spent_toman), 0.0),
+            )
+        )
+    ).one()
+    topups = (
+        await session.execute(
+            select(func.coalesce(func.sum(Payment.amount_toman), 0.0)).where(
+                Payment.status.in_(("finished", "approved"))
+            )
+        )
+    ).scalar()
+    return {
+        "wallets": int(row[0]),
+        "balance_toman": float(row[1]),
+        "spent_toman": float(row[2]),
+        "topped_up_toman": float(topups or 0.0),
+    }

@@ -97,10 +97,11 @@ async def cb_stats_show(callback: CallbackQuery, sessionmaker: async_sessionmake
     scope_chat = None if is_owner else callback.message.chat.id
     scope_label = "all chats" if is_owner else "this chat"
     async with sessionmaker() as session:
-        stats = await repo.get_stats(session, scope_chat, settings.usage_limit_usd)
+        stats = await repo.get_stats(session, scope_chat)
+        stats["wallet"] = await repo.get_wallet_stats(session) if is_owner else None
     try:
         await callback.message.edit_text(
-            stats_text(scope_label, stats, settings.usage_limit_usd),
+            stats_text(scope_label, stats),
             reply_markup=stats_keyboard(),
         )
     except TelegramBadRequest:
