@@ -2,7 +2,16 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app.config import Settings
-from app.premium import esc, pe
+from app.premium import emoji_id, esc, pe
+
+
+def picon_button(key: str, fallback: str, text: str, callback_data: str) -> InlineKeyboardButton:
+    """A button whose icon is a premium emoji (Bot API 9.4 icon_custom_emoji_id) when
+    one is configured for ``key``; otherwise the plain ``fallback`` emoji goes in the text."""
+    eid = emoji_id(key)
+    if eid:
+        return InlineKeyboardButton(text=text, callback_data=callback_data, icon_custom_emoji_id=eid)
+    return InlineKeyboardButton(text=f"{fallback} {text}", callback_data=callback_data)
 
 LEVEL_BUTTONS = [
     ("strict", "🎓 Strict"),
@@ -22,11 +31,11 @@ def settings_keyboard(current_level: str, enabled: bool, is_admin: bool = False)
     power = "⏸ Stop the bot" if enabled else "▶️ Start the bot"
     builder.row(InlineKeyboardButton(text=power, callback_data="power:toggle"))
     builder.row(
-        InlineKeyboardButton(text="📝 Whitelist", callback_data="whitelist:help"),
-        InlineKeyboardButton(text="💰 Wallet", callback_data="wallet:show"),
+        picon_button("whitelist", "📝", "Whitelist", "whitelist:help"),
+        picon_button("wallet", "💰", "Wallet", "wallet:show"),
     )
     if is_admin:
-        builder.row(InlineKeyboardButton(text="📊 Statistics", callback_data="stats:show"))
+        builder.row(picon_button("stats", "📊", "Statistics", "stats:show"))
     return builder.as_markup()
 
 
@@ -57,10 +66,10 @@ def main_menu_text(balance_toman: float) -> str:
 
 def main_menu_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="💰 موجودی و شارژ", callback_data="wallet:show")
-    b.button(text="📊 مصرف من", callback_data="menu:usage")
-    b.button(text="💬 مدل زبانی", callback_data="menu:model")
-    b.button(text="⚙️ تنظیمات", callback_data="menu:settings")
+    b.add(picon_button("wallet", "💰", "موجودی و شارژ", "wallet:show"))
+    b.add(picon_button("usage", "📊", "مصرف من", "menu:usage"))
+    b.add(picon_button("model", "💬", "مدل زبانی", "menu:model"))
+    b.add(picon_button("settings", "⚙️", "تنظیمات", "menu:settings"))
     b.adjust(2, 2)
     return b.as_markup()
 

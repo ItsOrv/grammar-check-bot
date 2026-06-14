@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.config import Settings
 from app.database import repo
+from app.keyboards import picon_button
 from app.premium import pe
 from app.services.payments.nowpayments import NowPayments
 from app.services.rate import RateProvider, toman_to_usd
@@ -39,17 +40,17 @@ def _order_id() -> str:
 
 def _wallet_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="💳 شارژ کیف پول", callback_data="wallet:topup")
-    b.button(text="🧾 تاریخچه", callback_data="wallet:history")
+    b.add(picon_button("card", "💳", "شارژ کیف پول", "wallet:topup"))
+    b.add(picon_button("history", "🧾", "تاریخچه", "wallet:history"))
     b.adjust(1)
     return b.as_markup()
 
 
 def _methods_keyboard(crypto_on: bool) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="💳 کارت به کارت", callback_data="m:card")
+    b.add(picon_button("card", "💳", "کارت به کارت", "m:card"))
     if crypto_on:
-        b.button(text="🪙 کریپتو", callback_data="m:crypto")
+        b.add(picon_button("coin", "🪙", "کریپتو", "m:crypto"))
     b.button(text="⬅️ بازگشت", callback_data="wallet:show")
     b.adjust(1)
     return b.as_markup()

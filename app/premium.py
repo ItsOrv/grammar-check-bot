@@ -21,6 +21,11 @@ def pe(key: str, fallback: str) -> str:
     return f'<tg-emoji emoji-id="{eid}">{fallback}</tg-emoji>' if eid else fallback
 
 
+def emoji_id(key: str) -> str | None:
+    """Raw custom_emoji_id for a key — used for button icons (icon_custom_emoji_id)."""
+    return _MAP.get(key)
+
+
 def esc(text: str) -> str:
     """HTML-escape dynamic text (e.g. user names) before putting it in an HTML message."""
     return escape(text or "")
