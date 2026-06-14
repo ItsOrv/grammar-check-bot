@@ -73,3 +73,14 @@ pytest
 # one-off LLM smoke test (needs LLM_API_KEY in .env):
 python -m scripts.try_llm "she go to school yesterday"
 ```
+
+## How the reply decision works
+
+The LLM returns structured JSON: `has_issues`, `severity` (0–5), `confidence` (0–1), `corrected`, `explanation`. The bot replies only when all of these hold:
+
+- `has_issues` is true
+- `severity` ≥ the level threshold (strict: 1, normal: 3, casual: 4)
+- `confidence` ≥ 0.8 (configurable)
+- the corrected text actually differs from the original
+
+Group whitelist terms are injected into the prompt so the model never flags them.
