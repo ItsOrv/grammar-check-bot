@@ -11,25 +11,60 @@ LEVEL_BUTTONS = [
 ]
 
 
-def settings_keyboard(current_level: str) -> InlineKeyboardMarkup:
+def settings_keyboard(current_level: str, enabled: bool, is_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for value, label in LEVEL_BUTTONS:
         text = f"▸ {label} ◂" if value == current_level else label
         builder.button(text=text, callback_data=f"level:{value}")
     builder.adjust(2, 2)
+    # The master switch. Shows what tapping it will do, not the current state.
+    power = "⏸ Stop the bot" if enabled else "▶️ Start the bot"
+    builder.row(InlineKeyboardButton(text=power, callback_data="power:toggle"))
     builder.row(InlineKeyboardButton(text="📝 Whitelist", callback_data="whitelist:help"))
+    if is_admin:
+        builder.row(InlineKeyboardButton(text="📊 Statistics", callback_data="stats:show"))
     return builder.as_markup()
 
 
-def settings_text(level: str, whitelist_count: int, settings: Settings) -> str:
+def settings_text(level: str, whitelist_count: int, settings: Settings, enabled: bool) -> str:
+    state = "🟢 running" if enabled else "🔴 stopped"
     return (
         "⚙️ Grammar check settings\n"
+        f"• Status: {state}\n"
         f"• Level: {level}\n"
         f"• Whitelist: {whitelist_count} term(s)\n"
         f"• Cooldown: {settings.cooldown_seconds}s per user\n"
         f"• Model: {settings.llm_model}\n\n"
         "Pick a strictness level:"
     )
+
+
+def stats_text(scope: str, stats: dict, limit_usd: float) -> str:
+    lines = [
+        f"📊 Statistics ({scope})",
+        "",
+        f"• Users: {stats['users']}",
+        f"• Chats: {stats['chats']}",
+        f"• LLM requests: {stats['requests']}",
+        f"• Corrections sent: {stats['replies']}",
+        f"• Tokens: {stats['prompt_tokens']:,} in / {stats['completion_tokens']:,} out",
+        f"• Total cost: ${stats['cost']:.4f}",
+        f"• Over the ${limit_usd:.2f} cap: {stats['over_limit']} user(s)",
+    ]
+    if stats["top"]:
+        lines.append("")
+        lines.append("Top spenders:")
+        for i, u in enumerate(stats["top"], 1):
+            lines.append(f"{i}. {u['name']} — ${u['cost']:.4f} ({u['requests']} req)")
+    return "\n".join(lines)
+
+
+def stats_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔄 Refresh", callback_data="stats:show")
+    builder.button(text="🧹 Reset", callback_data="stats:reset")
+    builder.row(InlineKeyboardButton(text="⬅️ Back", callback_data="stats:back"))
+    return builder.as_markup()
 
 
 def add_to_group_keyboard(bot_username: str) -> InlineKeyboardMarkup:

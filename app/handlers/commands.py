@@ -8,23 +8,30 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.config import Settings
 from app.database import repo
-from app.keyboards import settings_keyboard, settings_text
+from app.keyboards import settings_keyboard, settings_text, stats_keyboard, stats_text
 from app.services.llm import GrammarChecker
 
 logger = logging.getLogger(__name__)
 
 router = Router(name="commands")
-router.message.filter(F.chat.type.in_({"group", "supergroup"}))
+router.message.filter(F.chat.type.in_({"group", "supergroup", "private"}))
 
 LEVEL_REPLIES = {
     "strict": "✅ Strict mode: formal English — punctuation, capitalization, everything counts.",
     "normal": "✅ Normal mode: standard grammar checked, minor punctuation ignored.",
     "casual": "✅ Casual mode: slang and abbreviations are fine, only meaning-breaking errors get flagged.",
-    "off": "💤 Grammar checking is off for this group.",
+    "off": "💤 Grammar checking is off here.",
 }
 
 
+def _is_private(message: Message) -> bool:
+    return message.chat.type == "private"
+
+
 async def _is_admin(message: Message, settings: Settings) -> bool:
+    # In a private chat the user owns their own settings.
+    if _is_private(message):
+        return True
     # Anonymous group admins post as the chat itself.
     if message.sender_chat and message.sender_chat.id == message.chat.id:
         return True
@@ -47,6 +54,15 @@ async def _require_admin(message: Message, settings: Settings) -> bool:
     return False
 
 
+async def _can_see_stats(message: Message, settings: Settings) -> bool:
+    """Bot owners see everything; group admins see their own group."""
+    if message.from_user and message.from_user.id in settings.admin_id_set:
+        return True
+    if message.chat.type in ("group", "supergroup"):
+        return await _is_admin(message, settings)
+    return False
+
+
 @router.message(Command("strict", "normal", "casual", "off"))
 async def cmd_set_level(
     message: Message, command: CommandObject, sessionmaker: async_sessionmaker, settings: Settings
@@ -59,12 +75,31 @@ async def cmd_set_level(
     await message.reply(LEVEL_REPLIES[level])
 
 
+@router.message(Command("stop"))
+async def cmd_stop(message: Message, sessionmaker: async_sessionmaker, settings: Settings):
+    if not await _require_admin(message, settings):
+        return
+    async with sessionmaker() as session:
+        await repo.set_enabled(session, message.chat.id, False)
+    await message.reply("⏸ Stopped. I won't check messages until you start me again with /resume.")
+
+
+@router.message(Command("resume"))
+async def cmd_resume(message: Message, sessionmaker: async_sessionmaker, settings: Settings):
+    if not await _require_admin(message, settings):
+        return
+    async with sessionmaker() as session:
+        await repo.set_enabled(session, message.chat.id, True)
+    await message.reply("▶️ Started. I'm watching messages again.")
+
+
 @router.message(Command("t", "translate"))
 async def cmd_translate(
     message: Message,
     command: CommandObject,
     sessionmaker: async_sessionmaker,
     checker: GrammarChecker,
+    settings: Settings,
     llm_semaphore: asyncio.Semaphore,
 ):
     # Text to translate: command args, or the replied-to message's text.
@@ -75,11 +110,27 @@ async def cmd_translate(
         await message.reply("Usage: /t <text>  — or reply to a message with /t")
         return
 
+    user = message.from_user
+    if user:
+        async with sessionmaker() as session:
+            spent = await repo.get_user_total_cost(session, user.id)
+        if spent >= settings.usage_limit_usd:
+            await message.reply(f"😅 You've used up your ${settings.usage_limit_usd:.2f} of API credit.")
+            return
+
     async with sessionmaker() as session:
         level = await repo.get_level(session, message.chat.id)
 
     async with llm_semaphore:
-        translation = await checker.translate(text, level)
+        translation, usage = await checker.translate(text, level)
+
+    if user:
+        cost = usage.cost(settings.price_input_per_million, settings.price_output_per_million)
+        async with sessionmaker() as session:
+            await repo.record_usage(
+                session, message.chat.id, user.id, user.full_name,
+                usage.prompt_tokens, usage.completion_tokens, cost, replied=bool(translation),
+            )
 
     if not translation:
         await message.reply("Couldn't translate right now, please try again.")
@@ -89,12 +140,30 @@ async def cmd_translate(
 
 @router.message(Command("settings", "status"))
 async def cmd_settings(message: Message, sessionmaker: async_sessionmaker, settings: Settings):
+    show_stats = await _can_see_stats(message, settings)
     async with sessionmaker() as session:
         level = await repo.get_level(session, message.chat.id)
+        enabled = await repo.is_enabled(session, message.chat.id)
         whitelist = await repo.get_whitelist(session, message.chat.id)
     await message.reply(
-        settings_text(level, len(whitelist), settings),
-        reply_markup=settings_keyboard(level),
+        settings_text(level, len(whitelist), settings, enabled),
+        reply_markup=settings_keyboard(level, enabled, is_admin=show_stats),
+    )
+
+
+@router.message(Command("stats"))
+async def cmd_stats(message: Message, sessionmaker: async_sessionmaker, settings: Settings):
+    if not await _can_see_stats(message, settings):
+        await message.reply("Only admins can see statistics.")
+        return
+    is_owner = bool(message.from_user and message.from_user.id in settings.admin_id_set)
+    scope_chat = None if is_owner else message.chat.id
+    scope_label = "all chats" if is_owner else "this chat"
+    async with sessionmaker() as session:
+        stats = await repo.get_stats(session, scope_chat, settings.usage_limit_usd)
+    await message.reply(
+        stats_text(scope_label, stats, settings.usage_limit_usd),
+        reply_markup=stats_keyboard(),
     )
 
 

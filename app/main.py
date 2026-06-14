@@ -2,7 +2,7 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
-from aiogram.types import BotCommand, BotCommandScopeAllGroupChats
+from aiogram.types import BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats
 
 from app.config import Settings
 from app.database.session import create_engine_and_sessionmaker, init_db
@@ -18,9 +18,20 @@ GROUP_COMMANDS = [
     BotCommand(command="normal", description="Normal: standard grammar, minor stuff ignored"),
     BotCommand(command="casual", description="Casual: slang ok, only meaning-breaking errors"),
     BotCommand(command="off", description="Turn grammar checking off"),
+    BotCommand(command="stop", description="Pause the bot"),
+    BotCommand(command="resume", description="Start the bot again"),
     BotCommand(command="t", description="Translate text to English (tone matches the level)"),
     BotCommand(command="status", description="Show current settings"),
+    BotCommand(command="stats", description="Usage statistics (admins)"),
     BotCommand(command="whitelist", description="Show/add/remove never-flag terms"),
+]
+
+PRIVATE_COMMANDS = [
+    BotCommand(command="start", description="What I do and how to use me"),
+    BotCommand(command="settings", description="Pick a strictness level"),
+    BotCommand(command="t", description="Translate text to English"),
+    BotCommand(command="stop", description="Pause checking here"),
+    BotCommand(command="resume", description="Resume checking here"),
 ]
 
 
@@ -49,6 +60,7 @@ async def main() -> None:
     dp.include_router(messages.router)
 
     await bot.set_my_commands(GROUP_COMMANDS, scope=BotCommandScopeAllGroupChats())
+    await bot.set_my_commands(PRIVATE_COMMANDS, scope=BotCommandScopeAllPrivateChats())
     logger.info("Starting polling (provider=%s, model=%s)", settings.llm_provider, settings.llm_model)
     try:
         await dp.start_polling(bot)

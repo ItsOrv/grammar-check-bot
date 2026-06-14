@@ -1,4 +1,5 @@
 from aiogram import F, Router
+from aiogram.filters import Command
 from aiogram.types import Message
 
 from app.keyboards import add_to_group_keyboard
@@ -7,15 +8,17 @@ router = Router(name="private")
 router.message.filter(F.chat.type == "private")
 
 WELCOME = (
-    "👋 Hi! I'm a grammar checker for English group chats.\n\n"
-    "Add me to a group and I'll quietly watch messages — "
-    "replying only when something is genuinely wrong.\n\n"
-    "In the group, admins can use /settings to pick a strictness level "
-    "(strict / normal / casual / off)."
+    "👋 Hi! I'm an English grammar checker.\n\n"
+    "You can just type a sentence here and I'll check it, replying only when "
+    "something is genuinely wrong. Or add me to a group and I'll do the same there.\n\n"
+    "Useful commands:\n"
+    "• /settings — pick a strictness level (strict / normal / casual)\n"
+    "• /t <text> — translate anything into English\n"
+    "• /stop and /resume — pause or wake me up"
 )
 
 
-@router.message()
-async def on_private(message: Message):
+@router.message(Command("start", "help"))
+async def on_start(message: Message):
     me = await message.bot.me()
     await message.answer(WELCOME, reply_markup=add_to_group_keyboard(me.username))
