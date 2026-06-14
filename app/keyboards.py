@@ -59,14 +59,14 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="💰 موجودی و شارژ", callback_data="wallet:show")
     b.button(text="📊 مصرف من", callback_data="menu:usage")
-    b.button(text="🧠 مدل زبانی", callback_data="menu:model")
+    b.button(text="💬 مدل زبانی", callback_data="menu:model")
     b.button(text="⚙️ تنظیمات", callback_data="menu:settings")
     b.adjust(2, 2)
     return b.as_markup()
 
 
 def model_text(current: str) -> str:
-    return f"{pe('model', '🧠')} مدل زبانی فعلی: {esc(current)}\n\nیکی از مدل‌های زیر رو انتخاب کن:"
+    return f"{pe('model', '💬')} مدل زبانی فعلی: {esc(current)}\n\nیکی از مدل‌های زیر رو انتخاب کن:"
 
 
 def model_keyboard(current: str, choices: list[tuple[str, str]]) -> InlineKeyboardMarkup:
