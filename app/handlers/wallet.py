@@ -31,7 +31,9 @@ def _fmt(n: float) -> str:
 
 
 def _order_id() -> str:
-    return uuid.uuid4().hex[:16]
+    # gcb_ prefix marks these as grammar-check-bot orders, so they're easy to
+    # tell apart from any other service sharing the same NOWPayments account.
+    return "gcb_" + uuid.uuid4().hex[:16]
 
 
 def _wallet_keyboard() -> InlineKeyboardMarkup:
