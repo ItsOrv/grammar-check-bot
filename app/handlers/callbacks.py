@@ -48,7 +48,6 @@ async def _render_settings(callback: CallbackQuery, sessionmaker: async_sessionm
         await callback.message.edit_text(
             settings_text(level, whitelist_count, settings, enabled, model),
             reply_markup=settings_keyboard(level, enabled, is_admin=show_stats),
-            parse_mode="HTML",
         )
     except TelegramBadRequest:
         pass  # nothing actually changed — Telegram rejects a no-op edit
@@ -73,7 +72,7 @@ async def cb_set_level(callback: CallbackQuery, sessionmaker: async_sessionmaker
     async with sessionmaker() as session:
         await repo.set_level(session, message.chat.id, level)
     await _render_settings(callback, sessionmaker, settings)
-    await callback.answer(f"Level set to {level} ✅")
+    await callback.answer(f"Level set to {level}")
 
 
 @router.callback_query(F.data == "power:toggle")
@@ -106,7 +105,6 @@ async def cb_stats_show(callback: CallbackQuery, sessionmaker: async_sessionmake
         await callback.message.edit_text(
             stats_text(scope_label, stats),
             reply_markup=stats_keyboard(),
-            parse_mode="HTML",
         )
     except TelegramBadRequest:
         pass

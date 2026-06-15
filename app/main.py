@@ -7,6 +7,7 @@ from aiogram.types import BotCommand, BotCommandScopeAllGroupChats, BotCommandSc
 
 from app import premium
 from app.config import Settings
+from app.middleware import PremiumEmojiMiddleware
 from app.database.session import create_engine_and_sessionmaker, init_db
 from app.handlers import callbacks, commands, membership, menu, messages, private, wallet
 from app.services.cooldown import Cooldown
@@ -55,6 +56,7 @@ async def main() -> None:
     await init_db(engine)
 
     bot = Bot(token=settings.bot_token)
+    bot.session.middleware(PremiumEmojiMiddleware())
     rate = RateProvider(settings)
     nowpayments = NowPayments(
         settings.nowpayments_api_key, settings.nowpayments_ipn_secret, settings.nowpayments_ipn_url

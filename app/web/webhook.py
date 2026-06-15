@@ -56,12 +56,12 @@ def build_app(
                 new_balance = await repo.credit(session, payment.user_id, payment.amount_toman)
                 await _notify(
                     bot, payment.user_id,
-                    f"✅ پرداختت تایید شد. {int(payment.amount_toman):,} تومان به کیف پولت اضافه شد.\n"
+                    f"پرداختت تایید شد. {int(payment.amount_toman):,} تومان به کیف پولت اضافه شد.\n"
                     f"موجودی: {int(new_balance):,} تومان",
                 )
             elif status in _DEAD:
                 await repo.set_payment_status(session, order_id, "failed")
-                await _notify(bot, payment.user_id, "❌ پرداخت کریپتوت ناموفق بود یا منقضی شد.")
+                await _notify(bot, payment.user_id, "پرداخت کریپتوت ناموفق بود یا منقضی شد.")
 
         return web.Response(text="ok")
 

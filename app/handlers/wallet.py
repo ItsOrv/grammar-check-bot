@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.config import Settings
 from app.database import repo
 from app.keyboards import picon_button
-from app.premium import pe
 from app.services.payments.nowpayments import NowPayments
 from app.services.rate import RateProvider, toman_to_usd
 
@@ -40,18 +39,18 @@ def _order_id() -> str:
 
 def _wallet_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.add(picon_button("card", "💳", "شارژ کیف پول", "wallet:topup"))
-    b.add(picon_button("history", "🧾", "تاریخچه", "wallet:history"))
+    b.add(picon_button("💳", "شارژ کیف پول", "wallet:topup"))
+    b.add(picon_button("📄", "تاریخچه", "wallet:history"))
     b.adjust(1)
     return b.as_markup()
 
 
 def _methods_keyboard(crypto_on: bool) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.add(picon_button("card", "💳", "کارت به کارت", "m:card"))
+    b.add(picon_button("💳", "کارت به کارت", "m:card"))
     if crypto_on:
-        b.add(picon_button("coin", "🪙", "کریپتو", "m:crypto"))
-    b.button(text="⬅️ بازگشت", callback_data="wallet:show")
+        b.add(picon_button("🪙", "کریپتو", "m:crypto"))
+    b.button(text="بازگشت", callback_data="wallet:show")
     b.adjust(1)
     return b.as_markup()
 
@@ -60,16 +59,16 @@ def _amount_keyboard(method: str, presets: list[int]) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     for p in presets:
         b.button(text=f"{_fmt(p)} تومان", callback_data=f"amt:{method}:{p}")
-    b.button(text="✏️ مبلغ دلخواه", callback_data=f"amtx:{method}")
-    b.button(text="⬅️ بازگشت", callback_data="wallet:topup")
+    b.button(text="مبلغ دلخواه", callback_data=f"amtx:{method}")
+    b.button(text="بازگشت", callback_data="wallet:topup")
     b.adjust(1)
     return b.as_markup()
 
 
 def _approve_keyboard(order_id: str) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="✅ تایید", callback_data=f"pay:approve:{order_id}")
-    b.button(text="❌ رد", callback_data=f"pay:reject:{order_id}")
+    b.button(text="تایید", callback_data=f"pay:approve:{order_id}")
+    b.button(text="رد", callback_data=f"pay:reject:{order_id}")
     b.adjust(2)
     return b.as_markup()
 
@@ -77,11 +76,11 @@ def _approve_keyboard(order_id: str) -> InlineKeyboardMarkup:
 async def _wallet_text(sessionmaker: async_sessionmaker, settings: Settings, user) -> str:
     async with sessionmaker() as session:
         wallet, _ = await repo.get_or_create_wallet(
-            session, user.id, user.full_name, settings.free_credit_toman
+            session, user.id, user.full_name, settings.free_credit_toman, started=True
         )
         balance, spent = wallet.balance_toman, wallet.spent_toman
     return (
-        f"{pe('wallet', '💰')} کیف پول\n\n"
+        "💰 کیف پول\n\n"
         f"• موجودی: {_fmt(balance)} تومان\n"
         f"• خرج‌شده تا حالا: {_fmt(spent)} تومان"
     )
@@ -93,7 +92,7 @@ async def _wallet_text(sessionmaker: async_sessionmaker, settings: Settings, use
 @router.message(Command("wallet", "balance"))
 async def cmd_wallet(message: Message, sessionmaker: async_sessionmaker, settings: Settings):
     text = await _wallet_text(sessionmaker, settings, message.from_user)
-    await message.answer(text, reply_markup=_wallet_keyboard(), parse_mode="HTML")
+    await message.answer(text, reply_markup=_wallet_keyboard())
 
 
 @router.callback_query(F.data == "wallet:show")
@@ -115,16 +114,16 @@ async def cb_wallet_show(
         return
     text = await _wallet_text(sessionmaker, settings, callback.from_user)
     try:
-        await callback.message.edit_text(text, reply_markup=_wallet_keyboard(), parse_mode="HTML")
+        await callback.message.edit_text(text, reply_markup=_wallet_keyboard())
     except Exception:
-        await callback.message.answer(text, reply_markup=_wallet_keyboard(), parse_mode="HTML")
+        await callback.message.answer(text, reply_markup=_wallet_keyboard())
     await callback.answer()
 
 
 @router.callback_query(F.data == "wallet:topup")
 async def cb_topup(callback: CallbackQuery, settings: Settings, nowpayments: NowPayments):
     if callback.message.chat.type != "private":
-        await callback.answer("برای شارژ به پیوی ربات بیا 🙏", show_alert=True)
+        await callback.answer("برای شارژ به پیوی ربات بیا.", show_alert=True)
         return
     await callback.message.edit_text(
         "روش پرداخت رو انتخاب کن:", reply_markup=_methods_keyboard(nowpayments.configured)
@@ -210,8 +209,8 @@ async def _start_topup(
                 provider_id=str(invoice.get("id", "")), note=invoice["invoice_url"],
             )
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🪙 پرداخت", url=invoice["invoice_url"])],
-            [InlineKeyboardButton(text="⬅️ کیف پول", callback_data="wallet:show")],
+            [InlineKeyboardButton(text="پرداخت", url=invoice["invoice_url"])],
+            [InlineKeyboardButton(text="کیف پول", callback_data="wallet:show")],
         ])
         await message.answer(
             f"مبلغ {_fmt(amount)} تومان (~${usd}) آماده‌ی پرداخته.\n"
@@ -262,7 +261,7 @@ async def on_receipt(message: Message, state: FSMContext, sessionmaker: async_se
             await message.copy_to(admin_id)
             await message.bot.send_message(
                 admin_id,
-                f"🧾 درخواست شارژ کارت به کارت\n"
+                "درخواست شارژ کارت به کارت\n"
                 f"کاربر: {message.from_user.full_name} (id={message.from_user.id})\n"
                 f"مبلغ: {_fmt(amount)} تومان\n"
                 f"کد سفارش: {order_id}",
@@ -272,7 +271,7 @@ async def on_receipt(message: Message, state: FSMContext, sessionmaker: async_se
         except Exception:
             logger.exception("failed to forward receipt to admin %s", admin_id)
     if sent:
-        await message.reply("✅ رسیدت برای ادمین ارسال شد. بعد از تایید، موجودیت شارژ میشه.")
+        await message.reply("رسیدت برای ادمین ارسال شد. بعد از تایید، موجودیت شارژ میشه.")
     else:
         await message.reply("ارسال رسید به ادمین با مشکل خورد، بعدا دوباره امتحان کن.")
 
@@ -288,7 +287,7 @@ async def cb_history(callback: CallbackQuery, sessionmaker: async_sessionmaker):
         "pending": "در انتظار", "finished": "موفق", "approved": "تایید شده",
         "rejected": "رد شده", "failed": "ناموفق",
     }
-    lines = ["🧾 تاریخچه پرداخت‌ها:\n"]
+    lines = ["تاریخچه پرداخت‌ها:\n"]
     for p in payments:
         method = "کارت" if p.method == "card" else "کریپتو"
         lines.append(f"• {_fmt(p.amount_toman)} تومان | {method} | {status_fa.get(p.status, p.status)}")
@@ -317,15 +316,15 @@ async def cb_admin_decide(callback: CallbackQuery, sessionmaker: async_sessionma
         if action == "approve":
             await repo.set_payment_status(session, order_id, "approved")
             new_balance = await repo.credit(session, payment.user_id, payment.amount_toman)
-            verdict = f"✅ تایید شد ({_fmt(payment.amount_toman)} تومان)"
+            verdict = f"تایید شد ({_fmt(payment.amount_toman)} تومان)"
             user_msg = (
-                f"✅ شارژ {_fmt(payment.amount_toman)} تومانی‌ت تایید شد.\n"
+                f"شارژ {_fmt(payment.amount_toman)} تومانی‌ت تایید شد.\n"
                 f"موجودی: {_fmt(new_balance)} تومان"
             )
         else:
             await repo.set_payment_status(session, order_id, "rejected")
-            verdict = "❌ رد شد"
-            user_msg = f"❌ شارژ {_fmt(payment.amount_toman)} تومانی‌ت رد شد. با پشتیبانی تماس بگیر."
+            verdict = "رد شد"
+            user_msg = f"شارژ {_fmt(payment.amount_toman)} تومانی‌ت رد شد. با پشتیبانی تماس بگیر."
 
     try:
         await callback.message.edit_text(callback.message.text + f"\n\n{verdict}")

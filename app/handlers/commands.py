@@ -18,10 +18,10 @@ router = Router(name="commands")
 router.message.filter(F.chat.type.in_({"group", "supergroup", "private"}))
 
 LEVEL_REPLIES = {
-    "strict": "✅ Strict mode: formal English — punctuation, capitalization, everything counts.",
-    "normal": "✅ Normal mode: standard grammar checked, minor punctuation ignored.",
-    "casual": "✅ Casual mode: slang and abbreviations are fine, only meaning-breaking errors get flagged.",
-    "off": "💤 Grammar checking is off here.",
+    "strict": "Strict mode: formal English — punctuation, capitalization, everything counts.",
+    "normal": "Normal mode: standard grammar checked, minor punctuation ignored.",
+    "casual": "Casual mode: slang and abbreviations are fine, only meaning-breaking errors get flagged.",
+    "off": "Grammar checking is off here.",
 }
 
 
@@ -145,7 +145,7 @@ async def cmd_translate(
     if not translation:
         await message.reply("Couldn't translate right now, please try again.")
         return
-    await message.reply(f"🌐 {translation}")
+    await message.reply(f"{translation}")
 
 
 @router.message(Command("settings", "status"))
@@ -159,7 +159,6 @@ async def cmd_settings(message: Message, sessionmaker: async_sessionmaker, setti
     await message.reply(
         settings_text(level, len(whitelist), settings, enabled, model),
         reply_markup=settings_keyboard(level, enabled, is_admin=show_stats),
-        parse_mode="HTML",
     )
 
 
@@ -177,7 +176,6 @@ async def cmd_stats(message: Message, sessionmaker: async_sessionmaker, settings
     await message.reply(
         stats_text(scope_label, stats),
         reply_markup=stats_keyboard(),
-        parse_mode="HTML",
     )
 
 
@@ -200,7 +198,7 @@ async def cmd_emojiid(message: Message, settings: Settings):
     lines = []
     for e in customs:
         char = u16[e.offset * 2 : (e.offset + e.length) * 2].decode("utf-16-le", "ignore")
-        lines.append(f"{char} → <code>{e.custom_emoji_id}</code>")
+        lines.append(f"{char} : <code>{e.custom_emoji_id}</code>")
     await message.reply("\n".join(lines), parse_mode="HTML")
 
 
@@ -216,7 +214,7 @@ async def cmd_whitelist(
         if not words:
             await message.reply("Whitelist is empty. Add terms with /whitelist add <word ...>")
         else:
-            await message.reply("📝 Whitelisted terms:\n" + ", ".join(words))
+            await message.reply("Whitelisted terms:\n" + ", ".join(words))
         return
 
     action, *words = args
@@ -230,7 +228,7 @@ async def cmd_whitelist(
     async with sessionmaker() as session:
         if action == "add":
             added = await repo.add_whitelist_words(session, message.chat.id, words)
-            await message.reply(f"✅ Added: {', '.join(added)}" if added else "Nothing new to add.")
+            await message.reply(f"Added: {', '.join(added)}" if added else "Nothing new to add.")
         else:
             removed = await repo.remove_whitelist_word(session, message.chat.id, words[0])
-            await message.reply("✅ Removed." if removed else "That term isn't in the whitelist.")
+            await message.reply("Removed." if removed else "That term isn't in the whitelist.")
