@@ -175,7 +175,7 @@ async def cmd_stats(message: Message, sessionmaker: async_sessionmaker, settings
         stats["wallet"] = await repo.get_wallet_stats(session) if is_owner else None
     await message.reply(
         stats_text(scope_label, stats),
-        reply_markup=stats_keyboard(),
+        reply_markup=stats_keyboard(is_owner=is_owner),
     )
 
 

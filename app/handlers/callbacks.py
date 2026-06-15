@@ -104,7 +104,7 @@ async def cb_stats_show(callback: CallbackQuery, sessionmaker: async_sessionmake
     try:
         await callback.message.edit_text(
             stats_text(scope_label, stats),
-            reply_markup=stats_keyboard(),
+            reply_markup=stats_keyboard(is_owner=is_owner),
         )
     except TelegramBadRequest:
         pass
@@ -113,13 +113,13 @@ async def cb_stats_show(callback: CallbackQuery, sessionmaker: async_sessionmake
 
 @router.callback_query(F.data == "stats:reset")
 async def cb_stats_reset(callback: CallbackQuery, sessionmaker: async_sessionmaker, settings: Settings):
-    if not await _can_see_stats(callback, settings):
-        await callback.answer("Only admins can do that.", show_alert=True)
+    # Wiping usage stats is owner-only (it doesn't touch balances, but it's still
+    # not something group admins or regular users should be able to do).
+    if callback.from_user.id not in settings.admin_id_set:
+        await callback.answer("فقط مالک ربات می‌تونه آمار رو پاک کنه.", show_alert=True)
         return
-    is_owner = callback.from_user.id in settings.admin_id_set
-    scope_chat = None if is_owner else callback.message.chat.id
     async with sessionmaker() as session:
-        deleted = await repo.reset_usage(session, scope_chat)
+        deleted = await repo.reset_usage(session, None)
     await callback.answer(f"Cleared {deleted} record(s).", show_alert=True)
     await cb_stats_show(callback, sessionmaker, settings)
 

@@ -136,10 +136,11 @@ def stats_text(scope: str, stats: dict) -> str:
     return "\n".join(lines)
 
 
-def stats_keyboard() -> InlineKeyboardMarkup:
+def stats_keyboard(is_owner: bool = False) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="Refresh", callback_data="stats:show")
-    b.button(text="Reset", callback_data="stats:reset")
+    if is_owner:  # only the bot owner can wipe usage stats
+        b.button(text="Reset", callback_data="stats:reset")
     b.row(InlineKeyboardButton(text="Settings", callback_data="stats:back"))
     b.row(home_button())
     return b.as_markup()
