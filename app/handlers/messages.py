@@ -103,11 +103,13 @@ async def on_text(
             return
         async with sessionmaker() as session:
             wallet = await repo.get_wallet(session, payer_id)
-        if wallet is None or not wallet.started:
+        # Having a wallet means the owner has engaged with the bot (and got their
+        # free credit). If they never have, there's nobody to bill.
+        if wallet is None:
             await _warn_group(
                 message,
                 "کسی که منو اضافه کرده هنوز ربات رو استارت نکرده. لطفاً اول توی پیویِ ربات /start بزن "
-                "و موجودی داشته باش تا گرامرِ گروه چک شه.",
+                "تا گرامرِ گروه چک شه.",
             )
             return
 
