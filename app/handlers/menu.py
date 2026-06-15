@@ -49,6 +49,9 @@ async def cmd_menu(message: Message, sessionmaker: async_sessionmaker, settings:
 
 @router.callback_query(F.data == "menu:home")
 async def cb_home(callback: CallbackQuery, sessionmaker: async_sessionmaker, settings: Settings, state: FSMContext):
+    if callback.message.chat.type != "private":
+        await callback.answer("منوی اصلی توی پیویِ رباته.", show_alert=True)
+        return
     await state.clear()
     await _render_menu(callback.message, sessionmaker, settings, callback.from_user, edit=True)
     await callback.answer()

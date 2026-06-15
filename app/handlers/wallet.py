@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.config import Settings
 from app.database import repo
-from app.keyboards import picon_button
+from app.keyboards import home_button, picon_button
 from app.services.payments.nowpayments import NowPayments
 from app.services.rate import RateProvider, toman_to_usd
 
@@ -42,6 +42,7 @@ def _wallet_keyboard() -> InlineKeyboardMarkup:
     b.add(picon_button("💳", "شارژ کیف پول", "wallet:topup"))
     b.add(picon_button("📄", "تاریخچه", "wallet:history"))
     b.adjust(1)
+    b.row(home_button())
     return b.as_markup()
 
 
@@ -50,8 +51,9 @@ def _methods_keyboard(crypto_on: bool) -> InlineKeyboardMarkup:
     b.add(picon_button("💳", "کارت به کارت", "m:card"))
     if crypto_on:
         b.add(picon_button("🪙", "کریپتو", "m:crypto"))
-    b.button(text="بازگشت", callback_data="wallet:show")
+    b.add(picon_button("💰", "بازگشت به کیف پول", "wallet:show"))
     b.adjust(1)
+    b.row(home_button())
     return b.as_markup()
 
 
@@ -60,8 +62,8 @@ def _amount_keyboard(method: str, presets: list[int]) -> InlineKeyboardMarkup:
     for p in presets:
         b.button(text=f"{_fmt(p)} تومان", callback_data=f"amt:{method}:{p}")
     b.button(text="مبلغ دلخواه", callback_data=f"amtx:{method}")
-    b.button(text="بازگشت", callback_data="wallet:topup")
     b.adjust(1)
+    b.row(picon_button("💳", "بازگشت", "wallet:topup"), home_button())
     return b.as_markup()
 
 
@@ -208,10 +210,11 @@ async def _start_topup(
                 session, order_id, user_id, "crypto", amount, usd,
                 provider_id=str(invoice.get("id", "")), note=invoice["invoice_url"],
             )
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="پرداخت", url=invoice["invoice_url"])],
-            [InlineKeyboardButton(text="کیف پول", callback_data="wallet:show")],
-        ])
+        kbb = InlineKeyboardBuilder()
+        kbb.row(InlineKeyboardButton(text="پرداخت", url=invoice["invoice_url"]))
+        kbb.row(picon_button("💰", "بازگشت به کیف پول", "wallet:show"))
+        kbb.row(home_button())
+        kb = kbb.as_markup()
         await message.answer(
             f"مبلغ {_fmt(amount)} تومان (~${usd}) آماده‌ی پرداخته.\n"
             "روی دکمه‌ی پرداخت بزن. به محض تایید شبکه، موجودیت خودکار شارژ میشه.",

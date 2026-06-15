@@ -17,6 +17,11 @@ def picon_button(emoji: str, text: str, callback_data: str) -> InlineKeyboardBut
     return InlineKeyboardButton(text=text, callback_data=callback_data)
 
 
+def home_button() -> InlineKeyboardButton:
+    """Return-to-main-menu button, shown on every sub-screen."""
+    return picon_button("🏠", "منوی اصلی", "menu:home")
+
+
 LEVELS = [("strict", "Strict"), ("normal", "Normal"), ("casual", "Casual"), ("off", "Off")]
 
 
@@ -33,6 +38,7 @@ def settings_keyboard(current_level: str, enabled: bool, is_admin: bool = False)
     )
     if is_admin:
         b.row(picon_button("📊", "Statistics", "stats:show"))
+    b.row(home_button())
     return b.as_markup()
 
 
@@ -79,8 +85,8 @@ def model_keyboard(current: str, choices: list[tuple[str, str]]) -> InlineKeyboa
     for mid, label in choices:
         mark = "▸ " if mid == current else ""
         b.button(text=f"{mark}{label}", callback_data=f"model:{mid}")
-    b.button(text="بازگشت", callback_data="menu:home")
     b.adjust(1)
+    b.row(home_button())
     return b.as_markup()
 
 
@@ -97,7 +103,7 @@ def usage_text(name: str, requests: int, replies: int, prompt_t: int, completion
 
 def usage_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="بازگشت", callback_data="menu:home")
+    b.row(home_button())
     return b.as_markup()
 
 
@@ -134,7 +140,8 @@ def stats_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="Refresh", callback_data="stats:show")
     b.button(text="Reset", callback_data="stats:reset")
-    b.row(InlineKeyboardButton(text="Back", callback_data="stats:back"))
+    b.row(InlineKeyboardButton(text="Settings", callback_data="stats:back"))
+    b.row(home_button())
     return b.as_markup()
 
 
