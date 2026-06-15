@@ -53,7 +53,7 @@ async def _render_settings(callback: CallbackQuery, sessionmaker: async_sessionm
         pass  # nothing actually changed — Telegram rejects a no-op edit
 
 
-@router.callback_query(F.data.startswith("level:"))
+@router.callback_query(F.data.startswith("level:"), F.message)
 async def cb_set_level(callback: CallbackQuery, sessionmaker: async_sessionmaker, settings: Settings):
     message = callback.message
     if not message or message.chat.type not in ("group", "supergroup", "private"):
@@ -75,7 +75,7 @@ async def cb_set_level(callback: CallbackQuery, sessionmaker: async_sessionmaker
     await callback.answer(f"Level set to {level}")
 
 
-@router.callback_query(F.data == "power:toggle")
+@router.callback_query(F.data == "power:toggle", F.message)
 async def cb_power_toggle(callback: CallbackQuery, sessionmaker: async_sessionmaker, settings: Settings):
     if not callback.message:
         await callback.answer()
@@ -90,7 +90,7 @@ async def cb_power_toggle(callback: CallbackQuery, sessionmaker: async_sessionma
     await callback.answer("روشن شد" if active else "متوقف شد")
 
 
-@router.callback_query(F.data == "stats:show")
+@router.callback_query(F.data == "stats:show", F.message)
 async def cb_stats_show(callback: CallbackQuery, sessionmaker: async_sessionmaker, settings: Settings):
     if not await _can_see_stats(callback, settings):
         await callback.answer("Only admins can see statistics.", show_alert=True)
@@ -111,7 +111,7 @@ async def cb_stats_show(callback: CallbackQuery, sessionmaker: async_sessionmake
     await callback.answer()
 
 
-@router.callback_query(F.data == "stats:reset")
+@router.callback_query(F.data == "stats:reset", F.message)
 async def cb_stats_reset(callback: CallbackQuery, sessionmaker: async_sessionmaker, settings: Settings):
     # Wiping usage stats is owner-only (it doesn't touch balances, but it's still
     # not something group admins or regular users should be able to do).
@@ -124,13 +124,13 @@ async def cb_stats_reset(callback: CallbackQuery, sessionmaker: async_sessionmak
     await cb_stats_show(callback, sessionmaker, settings)
 
 
-@router.callback_query(F.data == "stats:back")
+@router.callback_query(F.data == "stats:back", F.message)
 async def cb_stats_back(callback: CallbackQuery, sessionmaker: async_sessionmaker, settings: Settings):
     await _render_settings(callback, sessionmaker, settings)
     await callback.answer()
 
 
-@router.callback_query(F.data == "whitelist:help")
+@router.callback_query(F.data == "whitelist:help", F.message)
 async def cb_whitelist_help(callback: CallbackQuery):
     await callback.answer(
         "Whitelist = terms I never flag.\n\n"

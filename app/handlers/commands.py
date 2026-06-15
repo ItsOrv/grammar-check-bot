@@ -6,6 +6,7 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.billing import resolve_payer
 from app.config import Settings
 from app.database import repo
 from app.keyboards import settings_keyboard, settings_text, stats_keyboard, stats_text
@@ -114,15 +115,23 @@ async def cmd_translate(
         await message.reply("Usage: /t <text>  — or reply to a message with /t")
         return
 
-    user = message.from_user
-    if user:
-        async with sessionmaker() as session:
-            wallet, _ = await repo.get_or_create_wallet(
-                session, user.id, user.full_name, settings.free_credit_toman
-            )
-        if wallet.balance_toman <= 0:
-            await message.reply("💸 موجودی کیف پولت تموم شده. با /wallet شارژ کن.")
-            return
+    # Same billing as grammar checking: in a group the owner pays.
+    payer = await resolve_payer(message, sessionmaker, settings)
+    if payer.problem == "no_owner":
+        await message.reply("نمی‌دونم کی منو به این گروه اضافه کرده.")
+        return
+    if payer.problem == "no_wallet":
+        await message.reply("صاحبِ این گروه باید اول ربات رو توی پیوی استارت کنه و موجودی داشته باشه.")
+        return
+    if not payer.wallet.active:
+        await message.reply("ربات الان متوقفه. با /resume روشنش کن.")
+        return
+    if payer.wallet.balance_toman <= 0:
+        await message.reply(
+            "موجودیِ صاحبِ این گروه تموم شده." if message.chat.type != "private"
+            else "موجودی کیف پولت تموم شده. با /wallet شارژ کن."
+        )
+        return
 
     async with sessionmaker() as session:
         level = await repo.get_level(session, message.chat.id)
@@ -131,20 +140,21 @@ async def cmd_translate(
     async with llm_semaphore:
         translation, usage = await checker.translate(text, level, model=model)
 
-    if user:
-        cost = usage.cost(settings.price_input_per_million, settings.price_output_per_million)
-        toman = cost_to_toman(cost, await rate.get_rate(), settings.price_markup)
-        async with sessionmaker() as session:
-            await repo.record_usage(
-                session, message.chat.id, user.id, user.full_name,
-                usage.prompt_tokens, usage.completion_tokens, cost, replied=bool(translation),
-            )
-            if toman > 0:
-                await repo.deduct(session, user.id, toman)
-
     if not translation:
         await message.reply("Couldn't translate right now, please try again.")
         return
+
+    cost = usage.cost(settings.price_input_per_million, settings.price_output_per_million)
+    toman = cost_to_toman(cost, await rate.get_rate(), settings.price_markup)
+    async with sessionmaker() as session:
+        if message.from_user:  # stats to the sender
+            await repo.record_usage(
+                session, message.chat.id, message.from_user.id, message.from_user.full_name,
+                usage.prompt_tokens, usage.completion_tokens, cost, replied=True,
+            )
+        if toman > 0:  # money from the payer
+            await repo.deduct(session, payer.user_id, toman)
+
     await message.reply(f"{translation}")
 
 

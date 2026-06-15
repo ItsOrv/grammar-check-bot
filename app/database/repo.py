@@ -28,25 +28,6 @@ async def set_level(session: AsyncSession, chat_id: int, level: str) -> None:
     await session.commit()
 
 
-async def is_enabled(session: AsyncSession, chat_id: int) -> bool:
-    settings = await session.get(ChatSettings, chat_id)
-    return settings.enabled if settings else True
-
-
-async def toggle_enabled(session: AsyncSession, chat_id: int) -> bool:
-    """Flip the master switch and return the new state."""
-    settings = await _get_or_create_settings(session, chat_id)
-    settings.enabled = not settings.enabled
-    await session.commit()
-    return settings.enabled
-
-
-async def set_enabled(session: AsyncSession, chat_id: int, enabled: bool) -> None:
-    settings = await _get_or_create_settings(session, chat_id)
-    settings.enabled = enabled
-    await session.commit()
-
-
 async def get_model(session: AsyncSession, chat_id: int, default: str) -> str:
     settings = await session.get(ChatSettings, chat_id)
     return settings.model if (settings and settings.model) else default
@@ -135,12 +116,6 @@ async def record_usage(
     await session.commit()
 
 
-async def get_user_total_cost(session: AsyncSession, user_id: int) -> float:
-    """How much this user has spent across every chat."""
-    total = await session.scalar(select(func.coalesce(func.sum(Usage.cost), 0.0)).where(Usage.user_id == user_id))
-    return float(total or 0.0)
-
-
 async def get_user_usage(session: AsyncSession, user_id: int) -> dict:
     """This user's own totals, summed across every chat (for the 'my usage' view)."""
     row = (
@@ -159,23 +134,6 @@ async def get_user_usage(session: AsyncSession, user_id: int) -> dict:
         "prompt_tokens": int(row[2]),
         "completion_tokens": int(row[3]),
     }
-
-
-async def is_limit_notified(session: AsyncSession, chat_id: int, user_id: int) -> bool:
-    row = await _get_usage_row(session, chat_id, user_id)
-    return bool(row and row.limit_notified)
-
-
-async def mark_limit_notified(session: AsyncSession, chat_id: int, user_id: int) -> None:
-    row = await _get_usage_row(session, chat_id, user_id)
-    if row is None:
-        row = Usage(
-            chat_id=chat_id, user_id=user_id, name="", requests=0, replies=0,
-            prompt_tokens=0, completion_tokens=0, cost=0.0, limit_notified=False,
-        )
-        session.add(row)
-    row.limit_notified = True
-    await session.commit()
 
 
 # --- statistics -------------------------------------------------------------

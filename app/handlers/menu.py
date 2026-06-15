@@ -47,7 +47,7 @@ async def cmd_menu(message: Message, sessionmaker: async_sessionmaker, settings:
     await _render_menu(message, sessionmaker, settings, message.from_user, edit=False)
 
 
-@router.callback_query(F.data == "menu:home")
+@router.callback_query(F.data == "menu:home", F.message)
 async def cb_home(callback: CallbackQuery, sessionmaker: async_sessionmaker, settings: Settings, state: FSMContext):
     if callback.message.chat.type != "private":
         await callback.answer("منوی اصلی توی پیویِ رباته.", show_alert=True)
@@ -57,7 +57,7 @@ async def cb_home(callback: CallbackQuery, sessionmaker: async_sessionmaker, set
     await callback.answer()
 
 
-@router.callback_query(F.data == "menu:usage")
+@router.callback_query(F.data == "menu:usage", F.message)
 async def cb_usage(callback: CallbackQuery, sessionmaker: async_sessionmaker, settings: Settings):
     async with sessionmaker() as session:
         u = await repo.get_user_usage(session, callback.from_user.id)
@@ -75,7 +75,7 @@ async def cb_usage(callback: CallbackQuery, sessionmaker: async_sessionmaker, se
     await callback.answer()
 
 
-@router.callback_query(F.data == "menu:model")
+@router.callback_query(F.data == "menu:model", F.message)
 async def cb_model(callback: CallbackQuery, sessionmaker: async_sessionmaker, settings: Settings):
     async with sessionmaker() as session:
         current = await repo.get_model(session, callback.message.chat.id, settings.llm_model)
@@ -88,7 +88,7 @@ async def cb_model(callback: CallbackQuery, sessionmaker: async_sessionmaker, se
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("model:"))
+@router.callback_query(F.data.startswith("model:"), F.message)
 async def cb_set_model(callback: CallbackQuery, sessionmaker: async_sessionmaker, settings: Settings):
     model_id = callback.data.split(":", 1)[1]
     if model_id not in {m for m, _ in settings.model_choices}:
@@ -108,7 +108,7 @@ async def cb_set_model(callback: CallbackQuery, sessionmaker: async_sessionmaker
     await callback.answer(f"مدل: {model_id}")
 
 
-@router.callback_query(F.data == "menu:settings")
+@router.callback_query(F.data == "menu:settings", F.message)
 async def cb_settings(callback: CallbackQuery, sessionmaker: async_sessionmaker, settings: Settings):
     chat_id = callback.message.chat.id
     show_stats = callback.from_user.id in settings.admin_id_set

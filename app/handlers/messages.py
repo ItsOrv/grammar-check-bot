@@ -5,6 +5,7 @@ from aiogram import F, Router
 from aiogram.types import Message
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.billing import resolve_payer
 from app.config import Settings
 from app.database import repo
 from app.services import prefilter
@@ -16,28 +17,9 @@ logger = logging.getLogger(__name__)
 
 router = Router(name="messages")
 
-# Chats we've already nagged about a missing/unstarted owner (in-memory, resets on
-# restart) so we don't spam the group on every message.
+# Chats we've already nagged about a missing owner (in-memory, resets on restart)
+# so we don't spam the group on every message.
 _owner_warned: set[int] = set()
-
-
-async def _resolve_owner(message: Message, sessionmaker: async_sessionmaker) -> int | None:
-    """Who pays for this group: the person who added the bot, falling back to the
-    group creator (looked up once and remembered)."""
-    async with sessionmaker() as session:
-        owner_id = await repo.get_owner(session, message.chat.id)
-    if owner_id is not None:
-        return owner_id
-    try:
-        admins = await message.bot.get_chat_administrators(message.chat.id)
-        creator = next((a for a in admins if a.status == "creator"), None)
-    except Exception:
-        creator = None
-    if creator and creator.user and not creator.user.is_bot:
-        async with sessionmaker() as session:
-            await repo.set_owner(session, message.chat.id, creator.user.id)
-        return creator.user.id
-    return None
 
 
 async def _warn_group(message: Message, text: str) -> None:
@@ -82,44 +64,34 @@ async def on_text(
         model = await repo.get_model(session, message.chat.id, settings.llm_model)
 
     # --- work out who pays, and whether we can ---
-    if is_private:
-        payer_id = user.id
-        async with sessionmaker() as session:
-            wallet, granted = await repo.get_or_create_wallet(
-                session, user.id, user.full_name, settings.free_credit_toman, started=True
-            )
-        if granted:
-            try:
-                await message.answer(
-                    f"{int(settings.free_credit_toman):,} تومان اعتبار رایگان بهت دادم. "
-                    "هر وقت تموم شد با /wallet شارژ کن."
-                )
-            except Exception:
-                logger.exception("failed to send free-credit notice")
-    else:
-        payer_id = await _resolve_owner(message, sessionmaker)
-        if payer_id is None:
-            await _warn_group(message, "نمی‌دونم کی منو به این گروه اضافه کرده. یه ادمین دوباره اضافه‌م کنه.")
-            return
-        async with sessionmaker() as session:
-            wallet = await repo.get_wallet(session, payer_id)
-        # Having a wallet means the owner has engaged with the bot (and got their
-        # free credit). If they never have, there's nobody to bill.
-        if wallet is None:
-            await _warn_group(
-                message,
-                "کسی که منو اضافه کرده هنوز ربات رو استارت نکرده. لطفاً اول توی پیویِ ربات /start بزن "
-                "تا گرامرِ گروه چک شه.",
-            )
-            return
+    payer = await resolve_payer(message, sessionmaker, settings)
+    if payer.problem == "no_owner":
+        await _warn_group(message, "نمی‌دونم کی منو به این گروه اضافه کرده. یه ادمین دوباره اضافه‌م کنه.")
+        return
+    if payer.problem == "no_wallet":
+        await _warn_group(
+            message,
+            "کسی که منو اضافه کرده هنوز ربات رو استارت نکرده. لطفاً اول توی پیویِ ربات /start بزن "
+            "تا گرامرِ گروه چک شه.",
+        )
+        return
 
-    if not wallet.active:
+    if payer.granted:  # private only
+        try:
+            await message.answer(
+                f"{int(settings.free_credit_toman):,} تومان اعتبار رایگان بهت دادم. "
+                "هر وقت تموم شد با /wallet شارژ کن."
+            )
+        except Exception:
+            logger.exception("failed to send free-credit notice")
+
+    if not payer.wallet.active:
         return  # owner/user paused the bot with /stop
 
-    if wallet.balance_toman <= 0:
-        if not wallet.low_balance_notified:
+    if payer.wallet.balance_toman <= 0:
+        if not payer.wallet.low_balance_notified:
             async with sessionmaker() as session:
-                await repo.mark_low_balance_notified(session, payer_id)
+                await repo.mark_low_balance_notified(session, payer.user_id)
             try:
                 await message.answer(
                     "موجودیِ کیف پولِ صاحبِ این گروه تموم شده. برای ادامه باید شارژ کنه (/wallet)."
@@ -138,7 +110,7 @@ async def on_text(
     toman = cost_to_toman(cost_usd, await rate.get_rate(), settings.price_markup)
     logger.info(
         "result chat=%s sender=%s payer=%s %s cost=$%.5f/%dT -> reply=%s",
-        message.chat.id, user.id, payer_id, result, cost_usd, toman, will_reply,
+        message.chat.id, user.id, payer.user_id, result, cost_usd, toman, will_reply,
     )
 
     async with sessionmaker() as session:
@@ -148,7 +120,7 @@ async def on_text(
             usage.prompt_tokens, usage.completion_tokens, cost_usd, replied=will_reply,
         )
         if toman > 0:
-            await repo.deduct(session, payer_id, toman)
+            await repo.deduct(session, payer.user_id, toman)
 
     if not will_reply:
         return

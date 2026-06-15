@@ -97,7 +97,7 @@ async def cmd_wallet(message: Message, sessionmaker: async_sessionmaker, setting
     await message.answer(text, reply_markup=_wallet_keyboard())
 
 
-@router.callback_query(F.data == "wallet:show")
+@router.callback_query(F.data == "wallet:show", F.message)
 async def cb_wallet_show(
     callback: CallbackQuery, sessionmaker: async_sessionmaker, settings: Settings, state: FSMContext
 ):
@@ -122,7 +122,7 @@ async def cb_wallet_show(
     await callback.answer()
 
 
-@router.callback_query(F.data == "wallet:topup")
+@router.callback_query(F.data == "wallet:topup", F.message)
 async def cb_topup(callback: CallbackQuery, settings: Settings, nowpayments: NowPayments):
     if callback.message.chat.type != "private":
         await callback.answer("برای شارژ به پیوی ربات بیا.", show_alert=True)
@@ -133,7 +133,7 @@ async def cb_topup(callback: CallbackQuery, settings: Settings, nowpayments: Now
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("m:"))
+@router.callback_query(F.data.startswith("m:"), F.message)
 async def cb_method(callback: CallbackQuery, settings: Settings):
     method = callback.data.split(":", 1)[1]
     label = "کارت به کارت" if method == "card" else "کریپتو"
@@ -143,7 +143,7 @@ async def cb_method(callback: CallbackQuery, settings: Settings):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("amtx:"))
+@router.callback_query(F.data.startswith("amtx:"), F.message)
 async def cb_custom_amount(callback: CallbackQuery, state: FSMContext):
     method = callback.data.split(":", 1)[1]
     await state.set_state(TopUp.amount)
@@ -154,7 +154,7 @@ async def cb_custom_amount(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("amt:"))
+@router.callback_query(F.data.startswith("amt:"), F.message)
 async def cb_preset_amount(
     callback: CallbackQuery, state: FSMContext, sessionmaker: async_sessionmaker,
     settings: Settings, rate: RateProvider, nowpayments: NowPayments, bot: Bot,
@@ -279,7 +279,7 @@ async def on_receipt(message: Message, state: FSMContext, sessionmaker: async_se
         await message.reply("ارسال رسید به ادمین با مشکل خورد، بعدا دوباره امتحان کن.")
 
 
-@router.callback_query(F.data == "wallet:history")
+@router.callback_query(F.data == "wallet:history", F.message)
 async def cb_history(callback: CallbackQuery, sessionmaker: async_sessionmaker):
     async with sessionmaker() as session:
         payments = await repo.list_user_payments(session, callback.from_user.id, limit=10)
@@ -301,7 +301,7 @@ async def cb_history(callback: CallbackQuery, sessionmaker: async_sessionmaker):
 # --- admin approval (card to card) ------------------------------------------
 
 
-@router.callback_query(F.data.startswith("pay:"))
+@router.callback_query(F.data.startswith("pay:"), F.message)
 async def cb_admin_decide(callback: CallbackQuery, sessionmaker: async_sessionmaker, settings: Settings):
     if callback.from_user.id not in settings.admin_id_set:
         await callback.answer("فقط ادمین.", show_alert=True)
