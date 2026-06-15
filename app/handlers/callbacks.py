@@ -41,7 +41,7 @@ async def _render_settings(callback: CallbackQuery, sessionmaker: async_sessionm
     show_stats = await _can_see_stats(callback, settings)
     async with sessionmaker() as session:
         level = await repo.get_level(session, chat_id)
-        enabled = await repo.is_enabled(session, chat_id)
+        enabled = await repo.is_active(session, callback.from_user.id)
         whitelist_count = len(await repo.get_whitelist(session, chat_id))
         model = await repo.get_model(session, chat_id, settings.llm_model)
     try:
@@ -81,13 +81,14 @@ async def cb_power_toggle(callback: CallbackQuery, sessionmaker: async_sessionma
     if not callback.message:
         await callback.answer()
         return
-    if not await _is_admin(callback, settings):
-        await callback.answer("Only group admins can stop or start me.", show_alert=True)
-        return
+    # Personal owner-level switch: affects this user's private chat and every group
+    # they added the bot to.
     async with sessionmaker() as session:
-        enabled = await repo.toggle_enabled(session, callback.message.chat.id)
+        active = await repo.toggle_active(
+            session, callback.from_user.id, callback.from_user.full_name, settings.free_credit_toman
+        )
     await _render_settings(callback, sessionmaker, settings)
-    await callback.answer("▶️ Started" if enabled else "⏸ Stopped")
+    await callback.answer("روشن شد" if active else "متوقف شد")
 
 
 @router.callback_query(F.data == "stats:show")

@@ -58,6 +58,17 @@ async def set_model(session: AsyncSession, chat_id: int, model: str) -> None:
     await session.commit()
 
 
+async def get_owner(session: AsyncSession, chat_id: int) -> int | None:
+    settings = await session.get(ChatSettings, chat_id)
+    return settings.owner_id if settings else None
+
+
+async def set_owner(session: AsyncSession, chat_id: int, owner_id: int) -> None:
+    settings = await _get_or_create_settings(session, chat_id)
+    settings.owner_id = owner_id
+    await session.commit()
+
+
 async def get_whitelist(session: AsyncSession, chat_id: int) -> list[str]:
     rows = await session.scalars(
         select(WhitelistEntry.word).where(WhitelistEntry.chat_id == chat_id).order_by(WhitelistEntry.word)
@@ -235,25 +246,56 @@ async def reset_usage(session: AsyncSession, chat_id: int | None) -> int:
 # --- wallet (Toman) ---------------------------------------------------------
 
 
+async def get_wallet(session: AsyncSession, user_id: int) -> Wallet | None:
+    return await session.get(Wallet, user_id)
+
+
 async def get_or_create_wallet(
-    session: AsyncSession, user_id: int, name: str, free_credit: float
+    session: AsyncSession, user_id: int, name: str, free_credit: float, started: bool = False
 ) -> tuple[Wallet, bool]:
     """Return the wallet, creating it (and granting the one-time free credit) on first touch.
-    The bool says whether the free credit was just handed out."""
+    The bool says whether the free credit was just handed out. ``started=True`` marks that
+    the user has opened the bot in private (required before a group can bill them)."""
     wallet = await session.get(Wallet, user_id)
     granted_now = False
+    dirty = False
     if wallet is None:
         wallet = Wallet(
             user_id=user_id, name=name or "", balance_toman=free_credit, spent_toman=0.0,
-            free_granted=True, low_balance_notified=False,
+            active=True, started=started, free_granted=True, low_balance_notified=False,
         )
         session.add(wallet)
         granted_now = free_credit > 0
-        await session.commit()
-    elif name and wallet.name != name:
-        wallet.name = name
+        dirty = True
+    else:
+        if name and wallet.name != name:
+            wallet.name = name
+            dirty = True
+        if started and not wallet.started:
+            wallet.started = True
+            dirty = True
+    if dirty:
         await session.commit()
     return wallet, granted_now
+
+
+async def toggle_active(session: AsyncSession, user_id: int, name: str, free_credit: float) -> bool:
+    """Flip the owner-level stop/resume switch and return the new state."""
+    wallet, _ = await get_or_create_wallet(session, user_id, name, free_credit, started=True)
+    wallet.active = not wallet.active
+    await session.commit()
+    return wallet.active
+
+
+async def set_active(session: AsyncSession, user_id: int, name: str, free_credit: float, active: bool) -> None:
+    wallet, _ = await get_or_create_wallet(session, user_id, name, free_credit, started=True)
+    wallet.active = active
+    await session.commit()
+
+
+async def is_active(session: AsyncSession, user_id: int) -> bool:
+    wallet = await session.get(Wallet, user_id)
+    return wallet.active if wallet else True
 
 
 async def get_balance(session: AsyncSession, user_id: int) -> float:
@@ -276,7 +318,7 @@ async def credit(session: AsyncSession, user_id: int, amount_toman: float, name:
     if wallet is None:
         wallet = Wallet(
             user_id=user_id, name=name or "", balance_toman=0.0, spent_toman=0.0,
-            free_granted=True, low_balance_notified=False,
+            active=True, started=False, free_granted=True, low_balance_notified=False,
         )
         session.add(wallet)
     wallet.balance_toman = float(wallet.balance_toman) + amount_toman

@@ -18,6 +18,11 @@ _MIGRATIONS = {
     "chat_settings": {
         "enabled": "BOOLEAN NOT NULL DEFAULT 1",
         "model": "VARCHAR(64)",
+        "owner_id": "BIGINT",
+    },
+    "wallet": {
+        "active": "BOOLEAN NOT NULL DEFAULT 1",
+        "started": "BOOLEAN NOT NULL DEFAULT 0",
     },
 }
 

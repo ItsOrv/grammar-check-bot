@@ -78,20 +78,22 @@ async def cmd_set_level(
 
 @router.message(Command("stop"))
 async def cmd_stop(message: Message, sessionmaker: async_sessionmaker, settings: Settings):
-    if not await _require_admin(message, settings):
+    user = message.from_user
+    if not user:
         return
     async with sessionmaker() as session:
-        await repo.set_enabled(session, message.chat.id, False)
-    await message.reply("⏸ Stopped. I won't check messages until you start me again with /resume.")
+        await repo.set_active(session, user.id, user.full_name, settings.free_credit_toman, False)
+    await message.reply("متوقف شد. ربات توی پیویِ تو و همه‌ی گروه‌هایی که اضافه کردی غیرفعاله. برای روشن‌کردن: /resume")
 
 
 @router.message(Command("resume"))
 async def cmd_resume(message: Message, sessionmaker: async_sessionmaker, settings: Settings):
-    if not await _require_admin(message, settings):
+    user = message.from_user
+    if not user:
         return
     async with sessionmaker() as session:
-        await repo.set_enabled(session, message.chat.id, True)
-    await message.reply("▶️ Started. I'm watching messages again.")
+        await repo.set_active(session, user.id, user.full_name, settings.free_credit_toman, True)
+    await message.reply("روشن شد. دوباره پیام‌ها رو چک می‌کنم.")
 
 
 @router.message(Command("t", "translate"))
@@ -151,7 +153,7 @@ async def cmd_settings(message: Message, sessionmaker: async_sessionmaker, setti
     show_stats = await _can_see_stats(message, settings)
     async with sessionmaker() as session:
         level = await repo.get_level(session, message.chat.id)
-        enabled = await repo.is_enabled(session, message.chat.id)
+        enabled = await repo.is_active(session, message.from_user.id) if message.from_user else True
         whitelist = await repo.get_whitelist(session, message.chat.id)
         model = await repo.get_model(session, message.chat.id, settings.llm_model)
     await message.reply(

@@ -27,7 +27,9 @@ router = Router(name="menu")
 
 async def _render_menu(message: Message, sessionmaker: async_sessionmaker, settings: Settings, user, edit: bool):
     async with sessionmaker() as session:
-        wallet, _ = await repo.get_or_create_wallet(session, user.id, user.full_name, settings.free_credit_toman)
+        wallet, _ = await repo.get_or_create_wallet(
+            session, user.id, user.full_name, settings.free_credit_toman, started=True
+        )
         balance = wallet.balance_toman
     text, kb = main_menu_text(balance), main_menu_keyboard()
     if edit:
@@ -109,7 +111,7 @@ async def cb_settings(callback: CallbackQuery, sessionmaker: async_sessionmaker,
     show_stats = callback.from_user.id in settings.admin_id_set
     async with sessionmaker() as session:
         level = await repo.get_level(session, chat_id)
-        enabled = await repo.is_enabled(session, chat_id)
+        enabled = await repo.is_active(session, callback.from_user.id)
         whitelist = len(await repo.get_whitelist(session, chat_id))
         model = await repo.get_model(session, chat_id, settings.llm_model)
     try:

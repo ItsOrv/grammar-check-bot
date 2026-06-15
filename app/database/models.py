@@ -18,6 +18,9 @@ class ChatSettings(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     # Which LLM model this chat uses; null = fall back to the configured default.
     model: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
+    # In a group, the user who added the bot (falls back to the group creator).
+    # Their wallet pays for the whole group's checks.
+    owner_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, default=None)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -34,6 +37,12 @@ class Wallet(Base):
     name: Mapped[str] = mapped_column(String(128), default="")
     balance_toman: Mapped[float] = mapped_column(Float, default=0.0)
     spent_toman: Mapped[float] = mapped_column(Float, default=0.0)
+    # Owner-level on/off switch (stop/resume). Pauses this user's private chat
+    # and every group they added the bot to.
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # True once the user has actually opened the bot in private (/start). A group
+    # owner must have started the bot before we can bill them.
+    started: Mapped[bool] = mapped_column(Boolean, default=False)
     # Whether the one-time free credit was already handed out.
     free_granted: Mapped[bool] = mapped_column(Boolean, default=False)
     # So we only nag about an empty balance once.

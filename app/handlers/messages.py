@@ -16,39 +16,38 @@ logger = logging.getLogger(__name__)
 
 router = Router(name="messages")
 
+# Chats we've already nagged about a missing/unstarted owner (in-memory, resets on
+# restart) so we don't spam the group on every message.
+_owner_warned: set[int] = set()
 
-async def _check_wallet(message: Message, settings: Settings, sessionmaker: async_sessionmaker, user) -> bool:
-    """Make sure the user has a wallet (with free credit) and some balance left.
-    Returns True if they're good to go."""
+
+async def _resolve_owner(message: Message, sessionmaker: async_sessionmaker) -> int | None:
+    """Who pays for this group: the person who added the bot, falling back to the
+    group creator (looked up once and remembered)."""
     async with sessionmaker() as session:
-        wallet, granted = await repo.get_or_create_wallet(
-            session, user.id, user.full_name, settings.free_credit_toman
-        )
-        balance = wallet.balance_toman
-        low_notified = wallet.low_balance_notified
-
-    if granted and message.chat.type == "private":
-        try:
-            await message.answer(
-                f"🎁 {int(settings.free_credit_toman):,} تومان اعتبار رایگان بهت دادم. "
-                "هر وقت تموم شد می‌تونی با /wallet شارژ کنی."
-            )
-        except Exception:
-            logger.exception("failed to send free-credit notice")
-
-    if balance > 0:
-        return True
-
-    if not low_notified:
+        owner_id = await repo.get_owner(session, message.chat.id)
+    if owner_id is not None:
+        return owner_id
+    try:
+        admins = await message.bot.get_chat_administrators(message.chat.id)
+        creator = next((a for a in admins if a.status == "creator"), None)
+    except Exception:
+        creator = None
+    if creator and creator.user and not creator.user.is_bot:
         async with sessionmaker() as session:
-            await repo.mark_low_balance_notified(session, user.id)
-        try:
-            await message.reply(
-                "💸 موجودی کیف پولت تموم شده. برای ادامه با /wallet شارژ کن."
-            )
-        except Exception:
-            logger.exception("failed to send low-balance notice")
-    return False
+            await repo.set_owner(session, message.chat.id, creator.user.id)
+        return creator.user.id
+    return None
+
+
+async def _warn_group(message: Message, text: str) -> None:
+    if message.chat.id in _owner_warned:
+        return
+    _owner_warned.add(message.chat.id)
+    try:
+        await message.answer(text)
+    except Exception:
+        logger.exception("failed to warn group %s", message.chat.id)
 
 
 @router.message(F.chat.type.in_({"group", "supergroup", "private"}), F.text)
@@ -70,28 +69,65 @@ async def on_text(
     if not prefilter.should_check(
         message.text, message.entities, min_words=settings.min_words, min_chars=settings.min_chars
     ):
-        logger.info("skip (prefilter) chat=%s user=%s text=%.50r", message.chat.id, user.id, message.text)
         return
 
-    # In a 1:1 chat there's nobody to spam, so don't rate-limit the user against themselves.
     if not is_private and cooldown.is_active(message.chat.id, user.id):
-        logger.info("skip (cooldown) chat=%s user=%s", message.chat.id, user.id)
         return
 
     async with sessionmaker() as session:
-        if not await repo.is_enabled(session, message.chat.id):
-            return
         level = await repo.get_level(session, message.chat.id)
         if level == "off":
             return
         whitelist = await repo.get_whitelist(session, message.chat.id)
         model = await repo.get_model(session, message.chat.id, settings.llm_model)
 
-    if not await _check_wallet(message, settings, sessionmaker, user):
-        logger.info("skip (no balance) chat=%s user=%s", message.chat.id, user.id)
+    # --- work out who pays, and whether we can ---
+    if is_private:
+        payer_id = user.id
+        async with sessionmaker() as session:
+            wallet, granted = await repo.get_or_create_wallet(
+                session, user.id, user.full_name, settings.free_credit_toman, started=True
+            )
+        if granted:
+            try:
+                await message.answer(
+                    f"{int(settings.free_credit_toman):,} تومان اعتبار رایگان بهت دادم. "
+                    "هر وقت تموم شد با /wallet شارژ کن."
+                )
+            except Exception:
+                logger.exception("failed to send free-credit notice")
+    else:
+        payer_id = await _resolve_owner(message, sessionmaker)
+        if payer_id is None:
+            await _warn_group(message, "نمی‌دونم کی منو به این گروه اضافه کرده. یه ادمین دوباره اضافه‌م کنه.")
+            return
+        async with sessionmaker() as session:
+            wallet = await repo.get_wallet(session, payer_id)
+        if wallet is None or not wallet.started:
+            await _warn_group(
+                message,
+                "کسی که منو اضافه کرده هنوز ربات رو استارت نکرده. لطفاً اول توی پیویِ ربات /start بزن "
+                "و موجودی داشته باش تا گرامرِ گروه چک شه.",
+            )
+            return
+
+    if not wallet.active:
+        return  # owner/user paused the bot with /stop
+
+    if wallet.balance_toman <= 0:
+        if not wallet.low_balance_notified:
+            async with sessionmaker() as session:
+                await repo.mark_low_balance_notified(session, payer_id)
+            try:
+                await message.answer(
+                    "موجودیِ کیف پولِ صاحبِ این گروه تموم شده. برای ادامه باید شارژ کنه (/wallet)."
+                    if not is_private else
+                    "موجودی کیف پولت تموم شده. برای ادامه با /wallet شارژ کن."
+                )
+            except Exception:
+                logger.exception("failed to send low-balance notice")
         return
 
-    logger.info("checking chat=%s user=%s level=%s model=%s", message.chat.id, user.id, level, model)
     async with llm_semaphore:
         result, usage = await checker.check(message.text, level, whitelist, model=model)
 
@@ -99,23 +135,24 @@ async def on_text(
     cost_usd = usage.cost(settings.price_input_per_million, settings.price_output_per_million)
     toman = cost_to_toman(cost_usd, await rate.get_rate(), settings.price_markup)
     logger.info(
-        "result chat=%s user=%s %s cost=$%.5f/%dT -> reply=%s",
-        message.chat.id, user.id, result, cost_usd, toman, will_reply,
+        "result chat=%s sender=%s payer=%s %s cost=$%.5f/%dT -> reply=%s",
+        message.chat.id, user.id, payer_id, result, cost_usd, toman, will_reply,
     )
 
     async with sessionmaker() as session:
+        # stats are attributed to the sender; the money comes out of the payer's wallet.
         await repo.record_usage(
             session, message.chat.id, user.id, user.full_name,
             usage.prompt_tokens, usage.completion_tokens, cost_usd, replied=will_reply,
         )
         if toman > 0:
-            await repo.deduct(session, user.id, toman)
+            await repo.deduct(session, payer_id, toman)
 
     if not will_reply:
         return
 
     try:
-        await message.reply(f"✏️ {result.corrected}\n\n💡 {result.explanation}")
+        await message.reply(f"{result.corrected}\n\n{result.explanation}")
     except Exception:
         logger.exception("Failed to send correction reply")
         return
