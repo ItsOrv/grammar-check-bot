@@ -53,7 +53,7 @@ def settings_text(level: str, whitelist_count: int, settings: Settings, enabled:
 
 def main_menu_text(balance_toman: float) -> str:
     return (
-        "👋 سلام! من یه ربات گرامر انگلیسی‌ام.\n"
+        "👋 سلام! من یه ربات گرامر چک و ترجمه انگلیسی‌ام.\n"
         "اینجا جمله بفرست تا چک کنم، یا منو به گروهت اضافه کن.\n\n"
         f"💰 موجودی: {int(balance_toman):,} تومان\n\n"
         "از منوی زیر انتخاب کن:"
