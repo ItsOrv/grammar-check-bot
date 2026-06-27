@@ -216,7 +216,8 @@ async def _start_topup(
             )
             return
         invoice = await nowpayments.create_invoice(
-            order_id, usd, f"Wallet top-up {amount} Toman (user {user_id})"
+            order_id, usd, f"Wallet top-up {amount} Toman (user {user_id})",
+            pay_currency=settings.crypto_pay_currency,
         )
         if not invoice or not invoice.get("invoice_url"):
             await message.answer("ساخت فاکتور پرداخت با مشکل خورد، یه بار دیگه امتحان کن.")

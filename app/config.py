@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     nowpayments_api_key: str = ""
     nowpayments_ipn_secret: str = ""
     nowpayments_ipn_url: str = ""  # public https URL NOWPayments will call back
+    # Lock the invoice to one pay currency so we get THAT coin's minimum instead of
+    # NOWPayments' aggregate ~$18 floor. TRX (TRON) has a tiny minimum, so small
+    # toman top-ups go through. Empty = let the user pick (subject to the high floor).
+    crypto_pay_currency: str = "trx"
     webhook_host: str = "0.0.0.0"
     webhook_port: int = 8080
 

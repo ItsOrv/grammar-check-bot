@@ -22,14 +22,22 @@ class NowPayments:
     def configured(self) -> bool:
         return bool(self.api_key)
 
-    async def create_invoice(self, order_id: str, amount_usd: float, description: str) -> dict | None:
-        """Create a hosted invoice. Returns the parsed response (with invoice_url) or None."""
+    async def create_invoice(
+        self, order_id: str, amount_usd: float, description: str, pay_currency: str = ""
+    ) -> dict | None:
+        """Create a hosted invoice. Returns the parsed response (with invoice_url) or None.
+
+        ``pay_currency`` locks the invoice to a single coin (e.g. "trx"), so the order is
+        bound by that coin's minimum rather than NOWPayments' much higher aggregate floor.
+        """
         payload = {
             "price_amount": amount_usd,
             "price_currency": "usd",
             "order_id": order_id,
             "order_description": description,
         }
+        if pay_currency:
+            payload["pay_currency"] = pay_currency
         if self.ipn_url:
             payload["ipn_callback_url"] = self.ipn_url
         try:
