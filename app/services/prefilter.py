@@ -39,13 +39,17 @@ def should_check(
     if any(e.type in _CODE_ENTITY_TYPES for e in entities):
         return False
 
-    # Blank out URL/mention/etc. spans so they don't count toward length.
-    chars = list(text)
+    # Blank out URL/mention/etc. spans so they don't count toward length. Telegram entity
+    # offsets/lengths are in UTF-16 code units, so we work in UTF-16-LE here — indexing a
+    # Python str (code points) would misalign on any emoji/supplementary char in the text.
+    units = bytearray(text.encode("utf-16-le"))
     for e in entities:
         if e.type in _STRIP_ENTITY_TYPES:
-            for i in range(e.offset, min(e.offset + e.length, len(chars))):
-                chars[i] = " "
-    cleaned = _EMOJI_RE.sub(" ", "".join(chars)).strip()
+            start, end = e.offset, min(e.offset + e.length, len(units) // 2)
+            for i in range(start, end):
+                units[2 * i] = 0x20  # ' '
+                units[2 * i + 1] = 0x00
+    cleaned = _EMOJI_RE.sub(" ", units.decode("utf-16-le", "ignore")).strip()
 
     if len(cleaned) < min_chars or len(cleaned.split()) < min_words:
         return False

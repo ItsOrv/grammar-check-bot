@@ -97,8 +97,6 @@ class Usage(Base):
     prompt_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
     completion_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
     cost: Mapped[float] = mapped_column(Float, default=0.0)
-    # Whether we already told this user they hit their spending cap (so we only say it once).
-    limit_notified: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

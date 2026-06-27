@@ -4,6 +4,7 @@ services:
     image: grammar-check-bot
     container_name: grammar-check-bot
     restart: unless-stopped
+    mem_limit: 384m
     env_file: .env
     environment:
       # Bind on all interfaces inside the container; the port below only

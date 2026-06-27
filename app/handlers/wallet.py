@@ -1,7 +1,9 @@
 import logging
+import math
 import uuid
 
 from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -177,6 +179,9 @@ async def on_custom_amount(
     if not digits or int(digits) < MIN_TOPUP_TOMAN:
         await message.reply(f"یه عدد معتبر بفرست (حداقل {_fmt(MIN_TOPUP_TOMAN)} تومان).")
         return
+    if int(digits) > settings.max_topup_toman:
+        await message.reply(f"مبلغ خیلی زیاده. حداکثر {_fmt(settings.max_topup_toman)} تومان.")
+        return
     data = await state.get_data()
     await _start_topup(
         message, state, user_id=message.from_user.id, name=message.from_user.full_name,
@@ -198,7 +203,18 @@ async def _start_topup(
         if not nowpayments.configured:
             await message.answer("پرداخت کریپتو فعلا فعال نیست.")
             return
-        usd = toman_to_usd(amount, await rate.get_rate())
+        current_rate = await rate.get_rate()
+        usd = toman_to_usd(amount, current_rate)
+        if usd < settings.min_crypto_topup_usd:
+            # Below the processor's minimum — tell the user the smallest workable amount
+            # instead of letting the invoice fail with a cryptic error.
+            min_toman = math.ceil(settings.min_crypto_topup_usd * current_rate / 1000) * 1000
+            await message.answer(
+                "مبلغ برای پرداخت کریپتو خیلی کمه. "
+                f"حداقل حدود {_fmt(min_toman)} تومان (~${settings.min_crypto_topup_usd:g}) لازمه. "
+                "برای مبالغ کمتر از کارت به کارت استفاده کن."
+            )
+            return
         invoice = await nowpayments.create_invoice(
             order_id, usd, f"Wallet top-up {amount} Toman (user {user_id})"
         )
@@ -312,29 +328,41 @@ async def cb_admin_decide(callback: CallbackQuery, sessionmaker: async_sessionma
         if payment is None:
             await callback.answer("سفارش پیدا نشد.", show_alert=True)
             return
-        if payment.status != "pending":
-            await callback.answer(f"قبلا بررسی شده ({payment.status}).", show_alert=True)
+        # The receipt is forwarded to every admin, so two of them can click at the same
+        # moment. Claim the pending->decided transition atomically so only one wins —
+        # otherwise an approve race double-credits, or approve+reject leaves it inconsistent.
+        if action == "approve":
+            # Claim + credit in a single transaction so an approved top-up can never be lost.
+            claimed, new_balance = await repo.claim_payment_and_credit(session, order_id, "approved")
+        else:
+            claimed = await repo.claim_payment_if_pending(session, order_id, "rejected")
+            new_balance = 0.0
+        if claimed is None:
+            fresh = await repo.get_payment_by_order(session, order_id)
+            await callback.answer(
+                f"قبلا بررسی شده ({fresh.status if fresh else '—'}).", show_alert=True
+            )
             return
 
         if action == "approve":
-            await repo.set_payment_status(session, order_id, "approved")
-            new_balance = await repo.credit(session, payment.user_id, payment.amount_toman)
-            verdict = f"تایید شد ({_fmt(payment.amount_toman)} تومان)"
+            verdict = f"تایید شد ({_fmt(claimed.amount_toman)} تومان)"
             user_msg = (
-                f"شارژ {_fmt(payment.amount_toman)} تومانی‌ت تایید شد.\n"
+                f"شارژ {_fmt(claimed.amount_toman)} تومانی‌ت تایید شد.\n"
                 f"موجودی: {_fmt(new_balance)} تومان"
             )
         else:
-            await repo.set_payment_status(session, order_id, "rejected")
             verdict = "رد شد"
-            user_msg = f"شارژ {_fmt(payment.amount_toman)} تومانی‌ت رد شد. با پشتیبانی تماس بگیر."
+            user_msg = f"شارژ {_fmt(claimed.amount_toman)} تومانی‌ت رد شد. با پشتیبانی تماس بگیر."
 
     try:
         await callback.message.edit_text(callback.message.text + f"\n\n{verdict}")
     except Exception:
         pass
     try:
-        await callback.bot.send_message(payment.user_id, user_msg)
+        await callback.bot.send_message(claimed.user_id, user_msg)
+    except (TelegramBadRequest, TelegramForbiddenError) as exc:
+        # User blocked the bot or never opened it — expected, not a crash.
+        logger.warning("could not notify user %s of decision: %s", claimed.user_id, exc.message)
     except Exception:
-        logger.exception("failed to notify user %s of decision", payment.user_id)
+        logger.exception("failed to notify user %s of decision", claimed.user_id)
     await callback.answer(verdict)

@@ -2,6 +2,7 @@ import json
 import logging
 
 from aiogram import Bot
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiohttp import web
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -47,21 +48,24 @@ def build_app(
             payment = await repo.get_payment_by_order(session, order_id)
             if payment is None:
                 return web.Response(text="unknown order")
-            # Idempotent: only act while still pending, so repeated callbacks don't double-credit.
-            if payment.status != "pending":
-                return web.Response(text="already handled")
 
             if status in _PAID:
-                await repo.set_payment_status(session, order_id, "finished")
-                new_balance = await repo.credit(session, payment.user_id, payment.amount_toman)
+                # Atomically claim the pending->finished transition AND credit the wallet in one
+                # transaction. Only the caller that wins the claim credits, so duplicate (even
+                # concurrent) callbacks never double-credit, and the credit can't be lost halfway.
+                claimed, new_balance = await repo.claim_payment_and_credit(session, order_id, "finished")
+                if claimed is None:
+                    return web.Response(text="already handled")
                 await _notify(
-                    bot, payment.user_id,
-                    f"پرداختت تایید شد. {int(payment.amount_toman):,} تومان به کیف پولت اضافه شد.\n"
+                    bot, claimed.user_id,
+                    f"پرداختت تایید شد. {int(claimed.amount_toman):,} تومان به کیف پولت اضافه شد.\n"
                     f"موجودی: {int(new_balance):,} تومان",
                 )
             elif status in _DEAD:
-                await repo.set_payment_status(session, order_id, "failed")
-                await _notify(bot, payment.user_id, "پرداخت کریپتوت ناموفق بود یا منقضی شد.")
+                claimed = await repo.claim_payment_if_pending(session, order_id, "failed")
+                if claimed is None:
+                    return web.Response(text="already handled")
+                await _notify(bot, claimed.user_id, "پرداخت کریپتوت ناموفق بود یا منقضی شد.")
 
         return web.Response(text="ok")
 
@@ -73,6 +77,11 @@ def build_app(
 async def _notify(bot: Bot, user_id: int, text: str) -> None:
     try:
         await bot.send_message(user_id, text)
+    except (TelegramBadRequest, TelegramForbiddenError) as exc:
+        # Expected: the user never opened the bot in private ("chat not found") or blocked it.
+        # The payment is already credited and they'll see the balance later — this isn't a crash,
+        # so log a concise warning instead of a misleading ERROR traceback.
+        logger.warning("could not deliver payment notice to user %s: %s", user_id, exc.message)
     except Exception:
         logger.exception("failed to notify user %s about payment", user_id)
 

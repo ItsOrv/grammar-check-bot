@@ -6,7 +6,7 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.billing import resolve_payer
+from app.billing import resolve_payer, settings_switch_target
 from app.config import Settings
 from app.database import repo
 from app.keyboards import settings_keyboard, settings_text, stats_keyboard, stats_text
@@ -161,9 +161,10 @@ async def cmd_translate(
 @router.message(Command("settings", "status"))
 async def cmd_settings(message: Message, sessionmaker: async_sessionmaker, settings: Settings):
     show_stats = await _can_see_stats(message, settings)
+    target = await settings_switch_target(message, sessionmaker, message.from_user.id) if message.from_user else None
     async with sessionmaker() as session:
         level = await repo.get_level(session, message.chat.id)
-        enabled = await repo.is_active(session, message.from_user.id) if message.from_user else True
+        enabled = await repo.is_active(session, target) if target is not None else True
         whitelist = await repo.get_whitelist(session, message.chat.id)
         model = await repo.get_model(session, message.chat.id, settings.llm_model)
     await message.reply(

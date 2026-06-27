@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     rate_ttl_seconds: int = 600
     # Preset top-up amounts (Toman) shown as buttons.
     topup_presets_toman: str = "50000,100000,200000"
+    # Upper bound on a single top-up, so a typo can't create an absurd order.
+    max_topup_toman: int = 50_000_000
+    # Crypto processors reject tiny invoices; refuse a crypto top-up whose USD value
+    # falls below this so the user gets a clear message instead of a failed invoice.
+    min_crypto_topup_usd: float = 1.0
 
     # --- Card to card (manual, admin-approved) ---
     card_number: str = ""

@@ -1,4 +1,5 @@
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import ChatSettings, Payment, Usage, Wallet, WhitelistEntry
@@ -104,7 +105,7 @@ async def record_usage(
     if row is None:
         row = Usage(
             chat_id=chat_id, user_id=user_id, name="", requests=0, replies=0,
-            prompt_tokens=0, completion_tokens=0, cost=0.0, limit_notified=False,
+            prompt_tokens=0, completion_tokens=0, cost=0.0,
         )
         session.add(row)
     row.name = name or row.name
@@ -215,26 +216,33 @@ async def get_or_create_wallet(
     The bool says whether the free credit was just handed out. ``started=True`` marks that
     the user has opened the bot in private (required before a group can bill them)."""
     wallet = await session.get(Wallet, user_id)
-    granted_now = False
-    dirty = False
     if wallet is None:
         wallet = Wallet(
             user_id=user_id, name=name or "", balance_toman=free_credit, spent_toman=0.0,
             active=True, started=started, free_granted=True, low_balance_notified=False,
         )
         session.add(wallet)
-        granted_now = free_credit > 0
+        try:
+            await session.commit()
+            return wallet, free_credit > 0
+        except IntegrityError:
+            # A concurrent first-touch (e.g. /start racing a group message) already
+            # inserted this wallet. Reuse that row instead of crashing / double-granting.
+            await session.rollback()
+            wallet = await session.get(Wallet, user_id)
+            if wallet is None:
+                raise
+            # fall through and just sync name/started on the existing row
+    dirty = False
+    if name and wallet.name != name:
+        wallet.name = name
         dirty = True
-    else:
-        if name and wallet.name != name:
-            wallet.name = name
-            dirty = True
-        if started and not wallet.started:
-            wallet.started = True
-            dirty = True
+    if started and not wallet.started:
+        wallet.started = True
+        dirty = True
     if dirty:
         await session.commit()
-    return wallet, granted_now
+    return wallet, False
 
 
 async def toggle_active(session: AsyncSession, user_id: int, name: str, free_credit: float) -> bool:
@@ -261,28 +269,61 @@ async def get_balance(session: AsyncSession, user_id: int) -> float:
     return float(wallet.balance_toman) if wallet else 0.0
 
 
+async def _balance_now(session: AsyncSession, user_id: int) -> float:
+    balance = await session.scalar(select(Wallet.balance_toman).where(Wallet.user_id == user_id))
+    return float(balance) if balance is not None else 0.0
+
+
 async def deduct(session: AsyncSession, user_id: int, amount_toman: float) -> float:
-    wallet = await session.get(Wallet, user_id)
-    if wallet is None:
-        return 0.0
-    wallet.balance_toman = float(wallet.balance_toman) - amount_toman
-    wallet.spent_toman = float(wallet.spent_toman) + amount_toman
+    # Single conditional UPDATE so concurrent charges on the same wallet (e.g. a busy
+    # group all billed to one owner) can't lose each other's deductions — a Python
+    # read-modify-write would let two callers both read the old balance and clobber it.
+    await session.execute(
+        update(Wallet)
+        .where(Wallet.user_id == user_id)
+        .values(
+            balance_toman=Wallet.balance_toman - amount_toman,
+            spent_toman=Wallet.spent_toman + amount_toman,
+        )
+    )
     await session.commit()
-    return wallet.balance_toman
+    return await _balance_now(session, user_id)
 
 
 async def credit(session: AsyncSession, user_id: int, amount_toman: float, name: str = "") -> float:
-    wallet = await session.get(Wallet, user_id)
-    if wallet is None:
-        wallet = Wallet(
-            user_id=user_id, name=name or "", balance_toman=0.0, spent_toman=0.0,
-            active=True, started=False, free_granted=True, low_balance_notified=False,
+    # Atomic increment for the same reason as deduct(): two top-ups landing on one
+    # wallet at once (e.g. a card approval racing a crypto IPN) must both stick.
+    result = await session.execute(
+        update(Wallet)
+        .where(Wallet.user_id == user_id)
+        .values(
+            balance_toman=Wallet.balance_toman + amount_toman,
+            low_balance_notified=False,  # they have money again
         )
-        session.add(wallet)
-    wallet.balance_toman = float(wallet.balance_toman) + amount_toman
-    wallet.low_balance_notified = False  # they have money again
-    await session.commit()
-    return wallet.balance_toman
+    )
+    if result.rowcount == 0:
+        # No wallet yet — create it. If a concurrent caller wins the insert, retry as
+        # an increment so neither top-up is lost.
+        session.add(Wallet(
+            user_id=user_id, name=name or "", balance_toman=amount_toman, spent_toman=0.0,
+            active=True, started=False, free_granted=True, low_balance_notified=False,
+        ))
+        try:
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            await session.execute(
+                update(Wallet)
+                .where(Wallet.user_id == user_id)
+                .values(
+                    balance_toman=Wallet.balance_toman + amount_toman,
+                    low_balance_notified=False,
+                )
+            )
+            await session.commit()
+    else:
+        await session.commit()
+    return await _balance_now(session, user_id)
 
 
 async def is_low_balance_notified(session: AsyncSession, user_id: int) -> bool:
@@ -323,6 +364,62 @@ async def set_payment_status(session: AsyncSession, order_id: str, status: str) 
         payment.status = status
         await session.commit()
     return payment
+
+
+async def claim_payment_if_pending(
+    session: AsyncSession, order_id: str, new_status: str
+) -> Payment | None:
+    """Atomically move a payment out of 'pending' into ``new_status``.
+
+    Returns the payment only if *this* call won the transition; returns None if it was
+    already handled (or the order is unknown). The single conditional UPDATE is what makes
+    it safe: when the provider delivers the same IPN twice — even concurrently — exactly one
+    caller flips the row, so the wallet is credited once and never double-credited.
+    """
+    result = await session.execute(
+        update(Payment)
+        .where(Payment.order_id == order_id, Payment.status == "pending")
+        .values(status=new_status)
+    )
+    await session.commit()
+    if result.rowcount == 0:
+        return None
+    return await get_payment_by_order(session, order_id)
+
+
+async def claim_payment_and_credit(
+    session: AsyncSession, order_id: str, new_status: str
+) -> tuple[Payment | None, float]:
+    """Atomically flip a payment pending->``new_status`` AND credit its wallet, in one commit.
+
+    Returns ``(payment, new_balance)`` only if *this* call won the claim; ``(None, 0.0)``
+    if it was already handled or the order is unknown. Doing the status flip and the wallet
+    credit in a single transaction means a crash can never leave a payment marked paid while
+    the money was never added (which, since the row is no longer pending, would be unrecoverable).
+    """
+    result = await session.execute(
+        update(Payment)
+        .where(Payment.order_id == order_id, Payment.status == "pending")
+        .values(status=new_status)
+    )
+    if result.rowcount == 0:
+        return None, 0.0
+    payment = await get_payment_by_order(session, order_id)
+    upd = await session.execute(
+        update(Wallet)
+        .where(Wallet.user_id == payment.user_id)
+        .values(
+            balance_toman=Wallet.balance_toman + payment.amount_toman,
+            low_balance_notified=False,
+        )
+    )
+    if upd.rowcount == 0:
+        session.add(Wallet(
+            user_id=payment.user_id, name="", balance_toman=payment.amount_toman, spent_toman=0.0,
+            active=True, started=False, free_granted=True, low_balance_notified=False,
+        ))
+    await session.commit()
+    return payment, await _balance_now(session, payment.user_id)
 
 
 async def list_user_payments(session: AsyncSession, user_id: int, limit: int = 10) -> list[Payment]:

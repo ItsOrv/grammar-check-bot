@@ -44,6 +44,18 @@ async def resolve_owner(message: Message, sessionmaker: async_sessionmaker) -> i
     return None
 
 
+async def settings_switch_target(message: Message, sessionmaker: async_sessionmaker, clicker_id: int) -> int | None:
+    """Whose on/off (stop/resume) switch the settings panel should show and toggle.
+
+    Private chat: yourself. Group: the billing owner — they're who actually controls whether
+    the bot runs (and pays) here, so showing/flipping the clicker's personal switch instead
+    would be misleading (it wouldn't affect this group at all unless they happen to be the owner).
+    """
+    if message.chat.type == "private":
+        return clicker_id
+    return await resolve_owner(message, sessionmaker)
+
+
 async def resolve_payer(message: Message, sessionmaker: async_sessionmaker, settings: Settings) -> Payer:
     """Figure out whose wallet to charge for this message."""
     if message.chat.type == "private":

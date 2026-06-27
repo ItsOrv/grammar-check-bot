@@ -5,6 +5,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.billing import resolve_owner, settings_switch_target
 from app.config import Settings
 from app.database import repo
 from app.keyboards import settings_keyboard, settings_text, stats_keyboard, stats_text
@@ -39,9 +40,10 @@ async def _can_see_stats(callback: CallbackQuery, settings: Settings) -> bool:
 async def _render_settings(callback: CallbackQuery, sessionmaker: async_sessionmaker, settings: Settings):
     chat_id = callback.message.chat.id
     show_stats = await _can_see_stats(callback, settings)
+    target = await settings_switch_target(callback.message, sessionmaker, callback.from_user.id)
     async with sessionmaker() as session:
         level = await repo.get_level(session, chat_id)
-        enabled = await repo.is_active(session, callback.from_user.id)
+        enabled = await repo.is_active(session, target) if target is not None else True
         whitelist_count = len(await repo.get_whitelist(session, chat_id))
         model = await repo.get_model(session, chat_id, settings.llm_model)
     try:
@@ -77,15 +79,32 @@ async def cb_set_level(callback: CallbackQuery, sessionmaker: async_sessionmaker
 
 @router.callback_query(F.data == "power:toggle", F.message)
 async def cb_power_toggle(callback: CallbackQuery, sessionmaker: async_sessionmaker, settings: Settings):
-    if not callback.message:
+    msg = callback.message
+    if not msg:
         await callback.answer()
         return
-    # Personal owner-level switch: affects this user's private chat and every group
-    # they added the bot to.
+    # The switch belongs to the billing owner. In private that's you; in a group it's whoever
+    # added the bot (and pays), so only they — or a bot admin — may flip it, and we flip *their*
+    # wallet, not the clicker's personal switch (which wouldn't affect this group).
+    if msg.chat.type == "private":
+        target, name = callback.from_user.id, callback.from_user.full_name
+    else:
+        owner = await resolve_owner(msg, sessionmaker)
+        if owner is None:
+            await callback.answer("معلوم نیست کی این گروه رو اضافه کرده.", show_alert=True)
+            return
+        if callback.from_user.id != owner and callback.from_user.id not in settings.admin_id_set:
+            await callback.answer(
+                "فقط کسی که ربات رو به گروه اضافه کرده می‌تونه روشن/خاموشش کنه.", show_alert=True
+            )
+            return
+        async with sessionmaker() as session:
+            if await repo.get_wallet(session, owner) is None:
+                await callback.answer("صاحب گروه هنوز ربات رو توی پیوی استارت نکرده.", show_alert=True)
+                return
+        target, name = owner, ""
     async with sessionmaker() as session:
-        active = await repo.toggle_active(
-            session, callback.from_user.id, callback.from_user.full_name, settings.free_credit_toman
-        )
+        active = await repo.toggle_active(session, target, name, settings.free_credit_toman)
     await _render_settings(callback, sessionmaker, settings)
     await callback.answer("روشن شد" if active else "متوقف شد")
 

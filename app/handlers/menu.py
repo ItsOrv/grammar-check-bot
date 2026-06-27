@@ -6,6 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.billing import settings_switch_target
 from app.config import Settings
 from app.database import repo
 from app.handlers.callbacks import _is_admin as _cb_is_admin
@@ -112,9 +113,10 @@ async def cb_set_model(callback: CallbackQuery, sessionmaker: async_sessionmaker
 async def cb_settings(callback: CallbackQuery, sessionmaker: async_sessionmaker, settings: Settings):
     chat_id = callback.message.chat.id
     show_stats = callback.from_user.id in settings.admin_id_set
+    target = await settings_switch_target(callback.message, sessionmaker, callback.from_user.id)
     async with sessionmaker() as session:
         level = await repo.get_level(session, chat_id)
-        enabled = await repo.is_active(session, callback.from_user.id)
+        enabled = await repo.is_active(session, target) if target is not None else True
         whitelist = len(await repo.get_whitelist(session, chat_id))
         model = await repo.get_model(session, chat_id, settings.llm_model)
     try:
