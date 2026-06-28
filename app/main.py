@@ -13,6 +13,7 @@ from app.handlers import callbacks, commands, membership, menu, messages, privat
 from app.services.cooldown import Cooldown
 from app.services.llm import create_checker
 from app.services.payments.nowpayments import NowPayments
+from app.services.payments.rialex import RialEX
 from app.services.rate import RateProvider
 from app.web.webhook import build_app, start_webhook
 
@@ -61,6 +62,10 @@ async def main() -> None:
     nowpayments = NowPayments(
         settings.nowpayments_api_key, settings.nowpayments_ipn_secret, settings.nowpayments_ipn_url
     )
+    rialex = RialEX(
+        settings.rialex_base_url, settings.rialex_public_key,
+        settings.rialex_secret_key, settings.rialex_callback_url,
+    )
     dp = Dispatcher(
         storage=MemoryStorage(),
         settings=settings,
@@ -69,6 +74,7 @@ async def main() -> None:
         cooldown=Cooldown(settings.cooldown_seconds),
         rate=rate,
         nowpayments=nowpayments,
+        rialex=rialex,
         llm_semaphore=asyncio.Semaphore(settings.max_concurrent_llm),
     )
     dp.include_router(commands.router)
@@ -79,13 +85,13 @@ async def main() -> None:
     dp.include_router(private.router)
     dp.include_router(messages.router)
 
-    # IPN webhook for crypto payments, run next to the polling loop.
+    # Payment webhooks (crypto IPN + rial gateway callbacks), run next to the polling loop.
     runner = None
-    if nowpayments.configured:
-        app = build_app(settings, sessionmaker, bot, nowpayments)
+    if nowpayments.configured or rialex.configured:
+        app = build_app(settings, sessionmaker, bot, nowpayments, rialex)
         runner = await start_webhook(app, settings.webhook_host, settings.webhook_port)
     else:
-        logger.info("NOWPayments not configured, IPN webhook disabled")
+        logger.info("No payment provider configured, payment webhook disabled")
 
     await bot.set_my_commands(GROUP_COMMANDS, scope=BotCommandScopeAllGroupChats())
     await bot.set_my_commands(PRIVATE_COMMANDS, scope=BotCommandScopeAllPrivateChats())

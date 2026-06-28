@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.config import Settings
 from app.database import repo
 from app.services.payments.nowpayments import NowPayments
+from app.services.payments.rialex import RialEX
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ def build_app(
     sessionmaker: async_sessionmaker,
     bot: Bot,
     nowpayments: NowPayments,
+    rialex: RialEX | None = None,
 ) -> web.Application:
     app = web.Application()
 
@@ -69,8 +71,50 @@ def build_app(
 
         return web.Response(text="ok")
 
+    async def rialex_webhook(request: web.Request) -> web.Response:
+        raw = await request.read()
+        ts = request.headers.get("X-Webhook-Timestamp")
+        signature = request.headers.get("X-Webhook-Signature")
+        if rialex is None or not rialex.verify_webhook(raw, ts, signature):
+            logger.warning("RialEX webhook with bad signature")
+            return web.Response(status=403, text="bad signature")
+        try:
+            payload = json.loads(raw)
+        except Exception:
+            return web.Response(status=400, text="bad json")
+
+        event_type = str(payload.get("type") or request.headers.get("X-Webhook-Event") or "")
+        data = payload.get("data") or {}
+        order_id = str(data.get("merchant_order_id") or "")
+        logger.info("RialEX webhook order=%s event=%s", order_id, event_type)
+
+        async with sessionmaker() as session:
+            payment = await repo.get_payment_by_order(session, order_id)
+            if payment is None:
+                return web.Response(text="unknown order")
+
+            if event_type == "payment.approved":
+                # Atomic claim+credit, identical to the crypto path — duplicate or
+                # concurrent callbacks never double-credit.
+                claimed, new_balance = await repo.claim_payment_and_credit(session, order_id, "approved")
+                if claimed is None:
+                    return web.Response(text="already handled")
+                await _notify(
+                    bot, claimed.user_id,
+                    f"پرداخت ریالی‌ت تایید شد. {int(claimed.amount_toman):,} تومان به کیف پولت اضافه شد.\n"
+                    f"موجودی: {int(new_balance):,} تومان",
+                )
+            elif event_type == "payment.rejected":
+                claimed = await repo.claim_payment_if_pending(session, order_id, "rejected")
+                if claimed is None:
+                    return web.Response(text="already handled")
+                await _notify(bot, claimed.user_id, "پرداخت ریالی‌ت رد شد. با پشتیبانی تماس بگیر.")
+
+        return web.Response(text="ok")
+
     app.router.add_get("/", health)
     app.router.add_post("/nowpayments/ipn", ipn)
+    app.router.add_post("/rialex/webhook", rialex_webhook)
     return app
 
 

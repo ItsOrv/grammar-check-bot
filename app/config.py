@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     webhook_host: str = "0.0.0.0"
     webhook_port: int = 8080
 
+    # --- Rial card-to-card via the RialEX gateway ---
+    rialex_base_url: str = ""      # e.g. http://89.169.34.243:8000
+    rialex_public_key: str = ""
+    rialex_secret_key: str = ""
+    rialex_callback_url: str = ""  # public https URL the gateway calls back
+
     # Premium (custom) emoji shown in message text. Format: "key:custom_emoji_id,..."
     # Grab the IDs by sending the emoji to the bot with /emojiid (admin only).
     # Keys used: wave, wallet, usage, model, settings, stats.

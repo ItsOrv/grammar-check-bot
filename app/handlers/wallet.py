@@ -15,6 +15,7 @@ from app.config import Settings
 from app.database import repo
 from app.keyboards import home_button, picon_button
 from app.services.payments.nowpayments import NowPayments
+from app.services.payments.rialex import RialEX
 from app.services.rate import RateProvider, toman_to_usd
 
 logger = logging.getLogger(__name__)
@@ -48,8 +49,10 @@ def _wallet_keyboard() -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
-def _methods_keyboard(crypto_on: bool, card_on: bool) -> InlineKeyboardMarkup:
+def _methods_keyboard(crypto_on: bool, card_on: bool, rialex_on: bool = False) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
+    if rialex_on:
+        b.add(picon_button("🏦", "پرداخت ریالی", "m:rialex"))
     if card_on:
         b.add(picon_button("💳", "کارت به کارت", "m:card"))
     if crypto_on:
@@ -126,13 +129,15 @@ async def cb_wallet_show(
 
 
 @router.callback_query(F.data == "wallet:topup", F.message)
-async def cb_topup(callback: CallbackQuery, settings: Settings, nowpayments: NowPayments):
+async def cb_topup(callback: CallbackQuery, settings: Settings, nowpayments: NowPayments, rialex: RialEX):
     if callback.message.chat.type != "private":
         await callback.answer("برای شارژ به پیوی ربات بیا.", show_alert=True)
         return
     await callback.message.edit_text(
         "روش پرداخت رو انتخاب کن:",
-        reply_markup=_methods_keyboard(nowpayments.configured, bool(settings.card_number)),
+        reply_markup=_methods_keyboard(
+            nowpayments.configured, bool(settings.card_number), rialex.configured
+        ),
     )
     await callback.answer()
 
@@ -140,7 +145,7 @@ async def cb_topup(callback: CallbackQuery, settings: Settings, nowpayments: Now
 @router.callback_query(F.data.startswith("m:"), F.message)
 async def cb_method(callback: CallbackQuery, settings: Settings):
     method = callback.data.split(":", 1)[1]
-    label = "کارت به کارت" if method == "card" else "کریپتو"
+    label = {"card": "کارت به کارت", "crypto": "کریپتو", "rialex": "پرداخت ریالی"}.get(method, method)
     await callback.message.edit_text(
         f"مبلغ شارژ ({label}) رو انتخاب کن:", reply_markup=_amount_keyboard(method, settings.topup_presets)
     )
@@ -161,21 +166,21 @@ async def cb_custom_amount(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith("amt:"), F.message)
 async def cb_preset_amount(
     callback: CallbackQuery, state: FSMContext, sessionmaker: async_sessionmaker,
-    settings: Settings, rate: RateProvider, nowpayments: NowPayments, bot: Bot,
+    settings: Settings, rate: RateProvider, nowpayments: NowPayments, rialex: RialEX, bot: Bot,
 ):
     _, method, value = callback.data.split(":", 2)
     await callback.answer()
     await _start_topup(
         callback.message, state, user_id=callback.from_user.id, name=callback.from_user.full_name,
         method=method, amount=int(value), settings=settings, sessionmaker=sessionmaker,
-        rate=rate, nowpayments=nowpayments,
+        rate=rate, nowpayments=nowpayments, rialex=rialex,
     )
 
 
 @router.message(TopUp.amount, F.text)
 async def on_custom_amount(
     message: Message, state: FSMContext, sessionmaker: async_sessionmaker,
-    settings: Settings, rate: RateProvider, nowpayments: NowPayments,
+    settings: Settings, rate: RateProvider, nowpayments: NowPayments, rialex: RialEX,
 ):
     digits = "".join(ch for ch in message.text if ch.isdigit())
     if not digits or int(digits) < MIN_TOPUP_TOMAN:
@@ -188,7 +193,7 @@ async def on_custom_amount(
     await _start_topup(
         message, state, user_id=message.from_user.id, name=message.from_user.full_name,
         method=data.get("method", "card"), amount=int(digits), settings=settings,
-        sessionmaker=sessionmaker, rate=rate, nowpayments=nowpayments,
+        sessionmaker=sessionmaker, rate=rate, nowpayments=nowpayments, rialex=rialex,
     )
 
 
@@ -198,8 +203,36 @@ async def on_custom_amount(
 async def _start_topup(
     message: Message, state: FSMContext, *, user_id: int, name: str, method: str, amount: int,
     settings: Settings, sessionmaker: async_sessionmaker, rate: RateProvider, nowpayments: NowPayments,
+    rialex: RialEX,
 ):
     order_id = _order_id()
+    if method == "rialex":
+        await state.clear()
+        if not rialex.configured:
+            await message.answer("پرداخت ریالی فعلا فعال نیست.")
+            return
+        resp = await rialex.create_payment(order_id, amount)
+        url = resp.get("payment_url") if resp else None
+        if not url:
+            await message.answer("ساخت لینک پرداخت با مشکل خورد، یه بار دیگه امتحان کن.")
+            return
+        async with sessionmaker() as session:
+            await repo.create_payment(
+                session, order_id, user_id, "rialex", amount,
+                provider_id=str(resp.get("payment_id", "")), note=url,
+            )
+        kbb = InlineKeyboardBuilder()
+        kbb.row(InlineKeyboardButton(text="پرداخت ریالی", url=url))
+        kbb.row(picon_button("💰", "بازگشت به کیف پول", "wallet:show"))
+        kbb.row(home_button())
+        await message.answer(
+            f"مبلغ {_fmt(amount)} تومان آماده‌ی پرداخته.\n"
+            "روی دکمه‌ی پرداخت بزن، توی ربات کارت‌به‌کارت کن و رسید رو همونجا بفرست. "
+            "بعد از تایید، موجودیت خودکار شارژ میشه.",
+            reply_markup=kbb.as_markup(),
+        )
+        return
+
     if method == "crypto":
         await state.clear()
         if not nowpayments.configured:
@@ -311,7 +344,7 @@ async def cb_history(callback: CallbackQuery, sessionmaker: async_sessionmaker):
     }
     lines = ["تاریخچه پرداخت‌ها:\n"]
     for p in payments:
-        method = "کارت" if p.method == "card" else "کریپتو"
+        method = {"card": "کارت", "crypto": "کریپتو", "rialex": "ریالی"}.get(p.method, p.method)
         lines.append(f"• {_fmt(p.amount_toman)} تومان | {method} | {status_fa.get(p.status, p.status)}")
     await callback.message.edit_text("\n".join(lines), reply_markup=_wallet_keyboard())
     await callback.answer()
