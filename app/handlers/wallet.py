@@ -48,9 +48,10 @@ def _wallet_keyboard() -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
-def _methods_keyboard(crypto_on: bool) -> InlineKeyboardMarkup:
+def _methods_keyboard(crypto_on: bool, card_on: bool) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.add(picon_button("💳", "کارت به کارت", "m:card"))
+    if card_on:
+        b.add(picon_button("💳", "کارت به کارت", "m:card"))
     if crypto_on:
         b.add(picon_button("🪙", "کریپتو", "m:crypto"))
     b.add(picon_button("💰", "بازگشت به کیف پول", "wallet:show"))
@@ -130,7 +131,8 @@ async def cb_topup(callback: CallbackQuery, settings: Settings, nowpayments: Now
         await callback.answer("برای شارژ به پیوی ربات بیا.", show_alert=True)
         return
     await callback.message.edit_text(
-        "روش پرداخت رو انتخاب کن:", reply_markup=_methods_keyboard(nowpayments.configured)
+        "روش پرداخت رو انتخاب کن:",
+        reply_markup=_methods_keyboard(nowpayments.configured, bool(settings.card_number)),
     )
     await callback.answer()
 
